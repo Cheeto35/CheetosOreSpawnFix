@@ -17,6 +17,30 @@ namespace CheetosOreSpawnFix
             return r;
         }
 
+        // A two-step roll as one set of shares: outer[j] is the weight of sub-table j, inner[j][i] the weight of type i
+        // in sub-table j. A sub-table whose weights are all zero can't produce anything and is left out.
+        public static double[] Mixture(double[] outer, double[][] inner)
+        {
+            int n = 0;
+            foreach (double[] t in inner) n = Math.Max(n, t.Length);
+            double[] o = new double[outer.Length];
+            for (int j = 0; j < outer.Length && j < inner.Length; j++)
+            {
+                double s = 0;
+                foreach (double w in inner[j]) if (w > 0) s += w;
+                o[j] = s > 0 ? outer[j] : 0;
+            }
+            o = Normalize(o);
+            double[] r = new double[n];
+            for (int j = 0; j < o.Length; j++)
+            {
+                if (o[j] <= 0) continue;
+                double[] t = Normalize(inner[j]);
+                for (int i = 0; i < t.Length; i++) r[i] += o[j] * t[i];
+            }
+            return r;
+        }
+
         // The type furthest below its share once one more node is added: max of shares[i]*(total+1) - counts[i].
         // Only types with a share above 0 are eligible. Exact ties pick among the tied types by tieBreak in [0,1).
         // Returns -1 when no type is eligible.

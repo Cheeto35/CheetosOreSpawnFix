@@ -14,8 +14,9 @@ namespace CheetosOreSpawnFix
         public const int Strikes = 2;
         static readonly Dictionary<SpawnPoint, int> _strikes = new Dictionary<SpawnPoint, int>();
         static readonly HashSet<SpawnPoint> _bad = new HashSet<SpawnPoint>();
-        static readonly Queue<NetworkEntity> _move = new Queue<NetworkEntity>();
+        static readonly Queue<KeyValuePair<NetworkEntity, PopulationSample>> _move = new Queue<KeyValuePair<NetworkEntity, PopulationSample>>();
         static readonly HashSet<NetworkEntity> _queued = new HashSet<NetworkEntity>();
+        static readonly Queue<KeyValuePair<NetworkEntity, PopulationSample>> _check = new Queue<KeyValuePair<NetworkEntity, PopulationSample>>();
 
         public static void Mark(SpawnPoint p, string why)
         {
@@ -27,19 +28,40 @@ namespace CheetosOreSpawnFix
         public static bool Has(SpawnPoint p) { return p != null && _bad.Contains(p); }
         public static int Count { get { return _bad.Count; } }
 
-        public static void QueueMove(NetworkEntity e) { if (e != null && _queued.Add(e)) _move.Enqueue(e); }
+        // Buried nodes waiting to be moved, with the group they belong to.
+        public static void QueueMove(NetworkEntity e, PopulationSample group)
+        {
+            if (e != null && group != null && _queued.Add(e)) _move.Enqueue(new KeyValuePair<NetworkEntity, PopulationSample>(e, group));
+        }
         public static bool IsQueued(NetworkEntity e) { return e != null && _queued.Contains(e); }
         public static int Queued { get { return _move.Count; } }
 
-        public static bool TryDequeueMove(out NetworkEntity e)
+        public static bool TryDequeueMove(out NetworkEntity e, out PopulationSample group)
         {
             while (_move.Count > 0)
             {
-                e = _move.Dequeue();
-                _queued.Remove(e);
-                if (e != null) return true;
+                KeyValuePair<NetworkEntity, PopulationSample> kv = _move.Dequeue();
+                _queued.Remove(kv.Key);
+                if (kv.Key != null) { e = kv.Key; group = kv.Value; return true; }
             }
-            e = null;
+            e = null; group = null;
+            return false;
+        }
+
+        // New clusters waiting for their buried check.
+        public static void QueueCheck(NetworkEntity e, PopulationSample group)
+        {
+            if (e != null && group != null) _check.Enqueue(new KeyValuePair<NetworkEntity, PopulationSample>(e, group));
+        }
+        public static int PendingChecks { get { return _check.Count; } }
+        public static bool TryDequeueCheck(out NetworkEntity e, out PopulationSample group)
+        {
+            while (_check.Count > 0)
+            {
+                KeyValuePair<NetworkEntity, PopulationSample> kv = _check.Dequeue();
+                if (kv.Key != null) { e = kv.Key; group = kv.Value; return true; }
+            }
+            e = null; group = null;
             return false;
         }
 
@@ -62,10 +84,12 @@ namespace CheetosOreSpawnFix
             if (!Main.IsServer || !Main.Settings.Enabled || !Main.Settings.FixBuried || BadPoints.Count == 0) return true;
             // Only the mine node groups this mod manages; every other population (wyrms, crystals, ...) stays vanilla.
             if (definition == null || (definition.name != Levels.BoulderGroup && definition.name != Levels.SandstoneGroup)) return true;
+            System.Diagnostics.Stopwatch sw = Perf.Start();
             List<SpawnPoint> ok = new List<SpawnPoint>();
             foreach (SpawnPoint p in __instance.Points)
                 if (p != null && p.IsFree && !BadPoints.Has(p) && definition.IsPositionValid(p)) ok.Add(p);
             __result = ok.Count > 0 ? ok[UnityEngine.Random.Range(0, ok.Count)] : null;
+            Perf.Stop("spawn: pick point", sw);
             return false;
         }
     }

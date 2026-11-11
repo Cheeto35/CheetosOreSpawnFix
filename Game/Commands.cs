@@ -5,84 +5,128 @@ using Alta.Caves;
 using Alta.Chunks;
 using System.Linq;
 using Alta.Networking;
+using Alta.Populations;
 using System.Text;
 using Alta.Console;
 
 namespace CheetosOreSpawnFix
 {
-    // Admin console commands: "orefix census 2" and friends.
-    [Module("orefix", "Ore Spawn Fix: mine ore mix and buried nodes")]
+    // Admin console commands: "orefix census 2", "orefix census surface" and friends. An area is a mine level number
+    // or "surface" (the plot outside the mine entrance and the quarry above it).
+    [Module("orefix", "Ore Spawn Fix: ore mix and buried nodes in the mines and the quarry")]
     public static class OreFixCommands
     {
-        [Command("census", "Ore mix on a loaded mine level against the game's odds")]
-        public static string Census(int level)
+        // The loaded ore groups of an area. Null with a message when there are none.
+        static List<PopulationSample> Area(string area, out string name, out string error)
         {
-            MineLevel lvl = Levels.Number(level);
-            if (lvl == null)
+            error = null;
+            string a = (area ?? "").Trim().ToLowerInvariant();
+            List<PopulationSample> groups;
+            if (a == "surface" || a == "quarry")
             {
-                CaveLayerManager m = UnityEngine.Object.FindObjectOfType<CaveLayerManager>();
-                ICaveLayer layer;
-                if (m != null && m.Layers.TryGetValue(level, out layer) && layer.Chunk != null && layer.Chunk.IsLoaded && layer.Chunk.GetComponent<CaveLayerStreamer>() == null)
-                    return "level " + level + " is a special level (no cave generator, no ore groups): " + layer.Chunk.name;
-                return "level " + level + " is not loaded (a player must be on it)";
+                name = "surface";
+                groups = OreGroups.Loaded().Where(g => OreGroups.IsOre(g) && OreGroups.LevelOf(g) == OreGroups.Surface).ToList();
+                if (groups.Count == 0) error = "no surface ore groups are loaded (a player must be near the quarry)";
+                return groups.Count > 0 ? groups : null;
             }
-            if (!OreTable.Load()) return "ore table not found";
-            int[] counts = OreTable.Counts(lvl, null);
-            double[] shares = OreTable.TargetShares(lvl.Attributes);
+            int level;
+            if (!int.TryParse(a, out level)) { name = a; error = "area must be a mine level number or 'surface'"; return null; }
+            name = "level " + level;
+            groups = OreGroups.Loaded().Where(g => OreGroups.IsOre(g) && OreGroups.LevelOf(g) == level).ToList();
+            if (groups.Count > 0) return groups;
+            CaveLayerManager m = UnityEngine.Object.FindObjectOfType<CaveLayerManager>();
+            ICaveLayer layer;
+            if (m != null && m.Layers.TryGetValue(level, out layer) && layer.Chunk != null && layer.Chunk.IsLoaded && layer.Chunk.GetComponent<CaveLayerStreamer>() == null)
+                error = "level " + level + " is a special level (no cave generator, no ore groups): " + layer.Chunk.name;
+            else error = "level " + level + " is not loaded (a player must be on it)";
+            return null;
+        }
+
+        static IEnumerable<NetworkEntity> Clusters(List<PopulationSample> groups)
+        {
+            foreach (PopulationSample g in groups)
+                foreach (NetworkEntity e in g.SpawnedEntities.Keys.ToList())
+                    if (e != null) yield return e;
+        }
+
+        static string Mix(int[] counts, double[] shares)
+        {
             int total = counts.Sum();
             StringBuilder sb = new StringBuilder();
-            sb.Append("level " + level + ": " + total + " ore clusters");
             for (int i = 0; i < OreTable.Count; i++)
             {
                 if (counts[i] == 0 && shares[i] < 0.005) continue;
                 sb.Append(" | " + OreTable.Name(i) + ": " + counts[i] + " (" + (total > 0 ? 100.0 * counts[i] / total : 0).ToString("0") + "%) target " + (100 * shares[i]).ToString("0") + "%");
             }
-            sb.Append(" | " + BuriedSummary(lvl));
             return sb.ToString();
         }
 
-        static string BuriedSummary(MineLevel lvl)
+        [Command("census", "Ore mix of an area against the game's odds: census <level|surface>")]
+        public static string Census(string area)
+        {
+            string name, error;
+            List<PopulationSample> groups = Area(area, out name, out error);
+            if (groups == null) return error;
+            if (!OreTable.Load()) return "ore table not found";
+            double[] shares = OreTable.TargetShares(OreGroups.AttributesOf(groups[0]));
+            int[] counts = new int[OreTable.Count];
+            foreach (PopulationSample g in groups) { int[] c = OreTable.Counts(g, null); for (int i = 0; i < c.Length; i++) counts[i] += c[i]; }
+            StringBuilder sb = new StringBuilder();
+            sb.Append(name + ": " + (groups.Count > 1 ? groups.Count + " groups, " : "") + counts.Sum() + " ore clusters" + Mix(counts, shares) + " | " + BuriedSummary(groups));
+            if (groups.Count > 1)
+                foreach (PopulationSample g in groups)
+                    sb.Append(Environment.NewLine + "  " + OreGroups.Label(g) + ": " + OreTable.Counts(g, null).Sum() + " of " + g.MaximumPopulation + Mix(OreTable.Counts(g, null), shares));
+            return sb.ToString();
+        }
+
+        static string BuriedSummary(List<PopulationSample> groups)
         {
             int buried = 0, total = 0, queued = 0;
             Buried.Sync();
-            if (lvl.Boulders != null)
-                foreach (NetworkEntity e in lvl.Boulders.SpawnedEntities.Keys)
-                {
-                    if (e == null) continue;
-                    total++;
-                    if (Buried.Is(e)) { buried++; if (BadPoints.IsQueued(e)) queued++; }
-                }
+            foreach (NetworkEntity e in Clusters(groups))
+            {
+                total++;
+                if (Buried.Is(e)) { buried++; if (BadPoints.IsQueued(e)) queued++; }
+            }
             return "buried: " + buried + " of " + total + " clusters (" + queued + " queued to move), bad points: " + BadPoints.Count;
         }
 
-        [Command("destroy", "Destroy ore clusters on a level, as if mined: destroy <level> <ore name part> [count, -1 = all]")]
-        public static string Destroy(int level, string ore, int count = -1)
+        [Command("destroy", "Destroy ore clusters in an area, as if mined: destroy <level|surface> <ore name part> [count, -1 = all]")]
+        public static string Destroy(string area, string ore, int count = -1)
         {
-            MineLevel lvl = Levels.Number(level);
-            if (lvl == null || lvl.Boulders == null) return "level " + level + " is not loaded";
+            string name, error;
+            List<PopulationSample> groups = Area(area, out name, out error);
+            if (groups == null) return error;
             if (!OreTable.Load()) return "ore table not found";
             string want = (ore ?? "").ToLowerInvariant();
             int done = 0;
-            foreach (NetworkEntity e in new List<NetworkEntity>(lvl.Boulders.SpawnedEntities.Keys))
-            {
-                if (count >= 0 && done >= count) break;
-                if (e == null) continue;
-                int i = OreTable.OreOf(e);
-                if (want.Length > 0 && (i < 0 || OreTable.Name(i).ToLowerInvariant().IndexOf(want) < 0)) continue;
-                lvl.Boulders.LoseMember(e);
-                e.SceneDestroy();
-                done++;
-            }
+            foreach (PopulationSample g in groups)
+                foreach (NetworkEntity e in g.SpawnedEntities.Keys.ToList())
+                {
+                    if (count >= 0 && done >= count) break;
+                    if (e == null) continue;
+                    int i = OreTable.OreOf(e);
+                    if (want.Length > 0 && (i < 0 || OreTable.Name(i).ToLowerInvariant().IndexOf(want) < 0)) continue;
+                    g.LoseMember(e);
+                    e.SceneDestroy();
+                    done++;
+                }
             return "destroyed " + done;
         }
 
-        [Command("refill", "Refill a level's ore spawn group now instead of waiting for its timer")]
-        public static string Refill(int level)
+        [Command("refill", "Refill an area's ore groups now instead of waiting for their timer: refill <level|surface>")]
+        public static string Refill(string area)
         {
-            MineLevel lvl = Levels.Number(level);
-            if (lvl == null || lvl.Boulders == null) return "level " + level + " is not loaded";
-            lvl.Boulders.ForceSpawn(lvl.Boulders.MaximumPopulation);
-            return "population " + lvl.Boulders.CurrentPopulation + "/" + lvl.Boulders.MaximumPopulation + ", spawned " + lvl.Boulders.SpawnedEntities.Count;
+            string name, error;
+            List<PopulationSample> groups = Area(area, out name, out error);
+            if (groups == null) return error;
+            int cur = 0, max = 0, spawned = 0;
+            foreach (PopulationSample g in groups)
+            {
+                g.ForceSpawn(g.MaximumPopulation);
+                cur += g.CurrentPopulation; max += g.MaximumPopulation; spawned += g.SpawnedEntities.Count;
+            }
+            return "population " + cur + "/" + max + ", spawned " + spawned;
         }
 
         [Command("set", "Change a setting until the next reload: set <keep_mix|fix_buried> <true|false>")]
@@ -134,11 +178,36 @@ namespace CheetosOreSpawnFix
             return "unloaded level " + level;
         }
 
+        [Command("groups", "Every ore and sandstone group the mod is looking after right now")]
+        public static string Groups()
+        {
+            StringBuilder sb = new StringBuilder();
+            foreach (PopulationSample g in OreGroups.Loaded().OrderBy(x => OreGroups.LevelOf(x)))
+                sb.Append(OreGroups.Label(g) + " '" + g.Definition.name + "' " + g.CurrentPopulation + "/" + g.MaximumPopulation + " in chunk '" + g.Chunk.name + "'" + Environment.NewLine);
+            return sb.Length > 0 ? sb.ToString() : "no ore groups loaded";
+        }
+
+        // For testing the surface without a player there: list the world chunks near a spot and force-load one by name.
+        [Command("chunks", "World chunks near a spot: chunks <x> <z> <radius> [name to force-load, or * for every surface chunk there]")]
+        public static async Task<string> Chunks(float x, float z, float radius, string forceLoad = "")
+        {
+            StringBuilder sb = new StringBuilder();
+            UnityEngine.Vector2 at = new UnityEngine.Vector2(x, z);
+            foreach (LocationChunk c in UnityEngine.Object.FindObjectsOfType<LocationChunk>())
+            {
+                UnityEngine.Vector3 p = c.transform.position;
+                if (UnityEngine.Vector2.Distance(at, new UnityEngine.Vector2(p.x, p.z)) > radius) continue;
+                sb.Append("'" + c.name + "' at " + p.ToString("F0") + " loaded " + c.IsLoaded + " cave " + (c.GetComponent<CaveLayerStreamer>() != null) + Environment.NewLine);
+                if (forceLoad.Length > 0 && !c.IsLoaded && c.GetComponent<CaveLayerStreamer>() == null && (forceLoad == "*" || c.name == forceLoad)) { await c.ForceLoad(); sb.Append("  -> force-loaded" + Environment.NewLine); }
+            }
+            return sb.Length > 0 ? sb.ToString() : "no chunks within " + radius + " m";
+        }
+
         [Command("save", "Save every loaded chunk now (run before stopping the server)")]
         public static string Save()
         {
             int n = 0;
-            foreach (Alta.Chunks.LocationChunk c in UnityEngine.Object.FindObjectsOfType<Alta.Chunks.LocationChunk>())
+            foreach (LocationChunk c in UnityEngine.Object.FindObjectsOfType<LocationChunk>())
             {
                 if (c == null || !c.IsLoaded) continue;
                 c.Save();
@@ -148,42 +217,56 @@ namespace CheetosOreSpawnFix
             return "saving " + n + " loaded chunks";
         }
 
-        [Command("inspect", "Every ore cluster on a level: both buried checks and a spot to view it from")]
-        public static string Inspect(int level)
+        [Command("inspect", "Every ore cluster in an area: both buried checks and a spot to view it from: inspect <level|surface>")]
+        public static string Inspect(string area)
         {
-            MineLevel lvl = Levels.Number(level);
-            if (lvl == null || lvl.Boulders == null) return "level " + level + " is not loaded";
+            string name, error;
+            List<PopulationSample> groups = Area(area, out name, out error);
+            if (groups == null) return error;
             Buried.Sync();
             StringBuilder sb = new StringBuilder();
             int i = 0;
-            foreach (NetworkEntity e in lvl.Boulders.SpawnedEntities.Keys)
-            {
-                if (e == null) continue;
-                int rays = Buried.InsideRockRays(e), ok, n;
-                Buried.Reach(e, out ok, out n);
-                int ore = OreTable.OreOf(e);
-                sb.Append("#" + (i++) + " id " + e.Identifier + " " + (ore >= 0 ? OreTable.Name(ore) : "?") + " at " + e.transform.position.ToString("F2")
-                    + " | rays " + rays + "/6" + (rays >= Main.Settings.BuriedRays ? " RAYS-BURIED" : "")
-                    + " | reach " + ok + "/" + n + (n > 0 && ok < n ? " REACH-BURIED" : "")
-                    + " | layers " + string.Join(",", e.GetComponentsInChildren<UnityEngine.Collider>().Where(c => !c.isTrigger).Select(c => UnityEngine.LayerMask.LayerToName(c.gameObject.layer)).Distinct().ToArray())
-                    + " | centre " + Buried.Centre(e).ToString("F2") + " | view " + Buried.ViewPoint(e).ToString("F2") + Environment.NewLine);
-            }
+            foreach (PopulationSample g in groups)
+                foreach (NetworkEntity e in g.SpawnedEntities.Keys.ToList())
+                {
+                    if (e == null) continue;
+                    int rays = Buried.InsideRockRays(e), ok, n;
+                    Buried.Reach(e, out ok, out n);
+                    int ore = OreTable.OreOf(e);
+                    SpawnPoint p = BadPoints.PointOf(g, e);
+                    sb.Append("#" + (i++) + " id " + e.Identifier + " " + (ore >= 0 ? OreTable.Name(ore) : "?") + " at " + e.transform.position.ToString("F2")
+                        + " | rays " + rays + "/6" + (rays >= Main.Settings.BuriedRays ? " RAYS-BURIED" : "")
+                        + " | reach " + ok + "/" + n + (n > 0 && ok < n ? " REACH-BURIED" : "")
+                        + " | point " + (p != null ? UnityEngine.Vector3.Distance(p.Position, e.transform.position).ToString("0.0") + " m away" : "none")
+                        + " | layers " + string.Join(",", e.GetComponentsInChildren<UnityEngine.Collider>().Where(c => !c.isTrigger).Select(c => UnityEngine.LayerMask.LayerToName(c.gameObject.layer)).Distinct().ToArray())
+                        + " | centre " + Buried.Centre(e).ToString("F2") + " | view " + Buried.ViewPoint(e).ToString("F2") + " | " + OreGroups.Label(g) + Environment.NewLine);
+                }
             return sb.ToString();
         }
 
-        [Command("inspect1", "One cluster in detail: inspect1 <level> <entity id>")]
-        public static string Inspect1(int level, uint id)
+        [Command("inspect1", "One cluster in detail: inspect1 <level|surface> <entity id>")]
+        public static string Inspect1(string area, uint id)
         {
-            MineLevel lvl = Levels.Number(level);
-            if (lvl == null || lvl.Boulders == null) return "level " + level + " is not loaded";
-            NetworkEntity e = lvl.Boulders.SpawnedEntities.Keys.FirstOrDefault(x => x != null && x.Identifier == id);
-            if (e == null) return "no cluster " + id + " on level " + level;
+            string name, error;
+            List<PopulationSample> groups = Area(area, out name, out error);
+            if (groups == null) return error;
+            NetworkEntity e = Clusters(groups).FirstOrDefault(x => x.Identifier == id);
+            if (e == null) return "no cluster " + id + " in " + name;
             Buried.Sync();
             return Buried.Detail(e);
         }
 
         [Command("sweep", "Move buried nodes now: sweep [ignoreAge=true]")]
-        public static string SweepNow(bool ignoreAge = true) { return Sweep.RunOnce(ignoreAge); }
+        public static string SweepNow(bool ignoreAge = true)
+        {
+            System.Diagnostics.Stopwatch sw = Perf.Start();
+            string r = Sweep.RunOnce(ignoreAge);
+            Perf.Stop("sweep (one frame)", sw);
+            return r + " in " + sw.Elapsed.TotalMilliseconds.ToString("0.0") + " ms";
+        }
+
+        [Command("perf", "How long the mod's work takes on the main thread: perf [reset=false]")]
+        public static string PerfReport(bool reset = false) { return Perf.Report(reset); }
 
         [Command("reload", "Reload UserData/CheetosOreSpawnFix/config.txt")]
         public static string Reload() { return Main.LoadSettings(); }

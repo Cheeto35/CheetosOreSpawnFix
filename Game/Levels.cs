@@ -57,17 +57,6 @@ namespace CheetosOreSpawnFix
             }
         }
 
-        public static IEnumerable<MineLevel> Loaded()
-        {
-            foreach (CaveLayerStreamer st in Object.FindObjectsOfType<CaveLayerStreamer>())
-            {
-                MineLevel l = From(st);
-                if (l != null) yield return l;
-            }
-        }
-
-        public static MineLevel Number(int n) { return Loaded().FirstOrDefault(l => l.Number == n); }
-
         public static MineLevel At(Vector3 p)
         {
             LocationChunk c = LocationChunkHelper.GetBestContaining(p);
