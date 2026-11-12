@@ -20,7 +20,7 @@ It's worse than it looks, because a node is really a little pile of 3 to 5 bould
 - **Moves nodes that can't be reached at all.** If a whole node lands inside the rock, it gets moved. If a spot keeps doing that, it's not used again.
 - **Cleans up old buried nodes.** Every 10 minutes the mod checks the loaded areas. Unreachable nodes that have sat untouched for 6 hours get moved somewhere minable. The 6 hours keeps counting while an area is unloaded, so this works on busy servers too.
 
-It never moves a node with a player within 10 metres (it tries again a little later), it only works on areas that are loaded, and it never spawns an ore the game wouldn't put there. The surface only ever gets coal and copper, like in the normal game.
+It never moves a node with a player within 10 metres, and never moves one to a spot within 30 metres of a player, so ore doesn't pop up in front of anyone (it tries again a little later), it only works on areas that are loaded, and it never spawns an ore the game wouldn't put there. The surface only ever gets coal and copper, like in the normal game.
 
 ## Install
 
@@ -28,7 +28,7 @@ You need an A Township Tale server on the final game build (`main-1.7.2.1.42203`
 
 1. Stop the server.
 2. Drop `CheetosOreSpawnFix.dll` (it's in this folder, ready to use) into the server's `Mods` folder.
-3. Start the server. You should see `[CheetosOreSpawnFix] 1.1.2 ready` in the log.
+3. Start the server. You should see `[CheetosOreSpawnFix] 1.1.3 ready` in the log.
 
 Levels that had already gone bad before you installed it will fix themselves as players mine them. If you'd rather start clean right away without wiping the mine, run `orefix reset all` in the server console (see [Resetting the ore on an existing server](#resetting-the-ore-on-an-existing-server)).
 
@@ -46,7 +46,7 @@ The first time it runs, the mod creates `UserData\CheetosOreSpawnFix\config.txt`
 | `max_sunk` | `20` | how much of a boulder (in %) may be hidden in rock or ground before it's nudged out; `100` turns the nudging off |
 | `sweep_minutes` | `10` | how often to look for buried nodes |
 | `untouched_hours` | `6` | how long a node nobody can reach has to sit untouched before it's moved |
-| `player_radius` | `10` | never move a node with a player this close (metres) |
+| `player_radius` | `10` | never move a node with a player this close (metres). A moved node also never lands within 30 metres of a player, or this distance if it is bigger |
 | `buried_check` | `reach` | how "buried" is decided; leave this alone unless you know you need `rays` (the older, rougher check) |
 
 ## Console commands

@@ -79,15 +79,28 @@ namespace CheetosOreSpawnFix
     [HarmonyPatch(typeof(PointsPopulationValue), "GetRandom")]
     static class PickPointPatch
     {
+        // Set while the mod moves a buried node (Sweep.Move): the new spot must also be away from every player, or the
+        // node would pop up in front of them (a move is sent to players straight away).
+        internal static List<UnityEngine.Vector3> AvoidPlayers;
+        // After a pick made with AvoidPlayers: true if there were free points but every one was near a player.
+        internal static bool BlockedByPlayers;
+
         static bool Prefix(PointsPopulationValue __instance, PopulationDefinition definition, ref SpawnPoint __result)
         {
-            if (!Main.IsServer || !Main.Settings.Enabled || !Main.Settings.FixBuried || BadPoints.Count == 0) return true;
+            if (!Main.IsServer || !Main.Settings.Enabled || !Main.Settings.FixBuried) return true;
+            if (BadPoints.Count == 0 && AvoidPlayers == null) return true;
             // Only the mine node groups this mod manages; every other population (wyrms, crystals, ...) stays vanilla.
             if (definition == null || (definition.name != Levels.BoulderGroup && definition.name != Levels.SandstoneGroup)) return true;
             System.Diagnostics.Stopwatch sw = Perf.Start();
             List<SpawnPoint> ok = new List<SpawnPoint>();
+            bool nearOnly = false;
             foreach (SpawnPoint p in __instance.Points)
-                if (p != null && p.IsFree && !BadPoints.Has(p) && definition.IsPositionValid(p)) ok.Add(p);
+                if (p != null && p.IsFree && !BadPoints.Has(p) && definition.IsPositionValid(p))
+                {
+                    if (AvoidPlayers != null && Sweep.PlayerNear(p.Position, AvoidPlayers, Sweep.ArriveRadius)) { nearOnly = true; continue; }
+                    ok.Add(p);
+                }
+            BlockedByPlayers = ok.Count == 0 && nearOnly;
             __result = ok.Count > 0 ? ok[UnityEngine.Random.Range(0, ok.Count)] : null;
             Perf.Stop("spawn: pick point", sw);
             return false;

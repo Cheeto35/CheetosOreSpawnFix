@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.3 (12 Nov 2026)
+
+- **Fix:** ore could appear right in front of players. When the mod moved a buried node, it only checked for players at the spot the node was leaving, not the spot it was going to, and players see a move straight away. A moved node now never lands within 30 metres of a player (or `player_radius`, if that's bigger).
+- If every free spot is near a player, the buried node stays where it is and the mod tries again 30 seconds later, instead of removing it.
+- The respawn timer is unchanged: ore respawns at the game's normal rate. `orefix refill` still respawns an area by hand.
+
 ## 1.1.2 (12 Nov 2026)
 
 - **Sunk boulders get pulled out of the rock.** A node is 3 to 5 boulders, and on uneven ground some of them end up half inside the floor, a wall or a cave rock. Any boulder more than 20% hidden is now nudged out the smallest distance that frees it. New nodes are fixed as they spawn, and older ones by the regular check. A boulder that can't be freed is removed. On a test level, sunk boulders went from 180 of 322 to none. The limit is the new `max_sunk` setting.

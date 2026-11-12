@@ -11,7 +11,8 @@ namespace CheetosOreSpawnFix
     //  - older buried nodes, once they have sat untouched for UntouchedHours (checked every SweepMinutes).
     // When every spawn point is taken there is nowhere to move to, so the node is removed as if mined instead and
     // the group's refill (every 10 min) respawns it on a point that is not refused.
-    // Never moves a node with a player within PlayerRadius. Works on every loaded ore group: the mine levels and the
+    // Never moves a node with a player within PlayerRadius, nor onto a spot within ArriveRadius of a player (a move
+    // shows for players at once, so it would look like ore spawning in front of them). Works on every loaded ore group: the mine levels and the
     // surface (the plot outside the mine entrance and the quarry).
     // All of this shares a small time budget per frame, so a full refill or a sweep over many loaded groups is
     // spread over several frames instead of stalling one.
@@ -103,6 +104,7 @@ namespace CheetosOreSpawnFix
             }
             _retryAt.Remove(e);
             string r = Move(group, e, "buried when it spawned");
+            if (r == BlockedResult) { _retryAt[e] = now + RetrySeconds; BadPoints.QueueMove(e, group); return; }
             Main.Log(OreGroups.Label(group) + ": queued buried node " + r);
         }
 
@@ -118,12 +120,18 @@ namespace CheetosOreSpawnFix
             return list;
         }
 
-        public static bool PlayerNear(Vector3 at, List<Vector3> players)
+        public static bool PlayerNear(Vector3 at, List<Vector3> players) { return PlayerNear(at, players, Main.Settings.PlayerRadius); }
+
+        public static bool PlayerNear(Vector3 at, List<Vector3> players, double radius)
         {
-            float r2 = (float)(Main.Settings.PlayerRadius * Main.Settings.PlayerRadius);
+            float r2 = (float)(radius * radius);
             foreach (Vector3 p in players) if ((p - at).sqrMagnitude <= r2) return true;
             return false;
         }
+
+        // A moved node never lands closer than this to a player (player_radius if that is bigger).
+        public const double MinArriveRadius = 30;
+        public static double ArriveRadius { get { return System.Math.Max(MinArriveRadius, Main.Settings.PlayerRadius); } }
 
         // Nodes whose boulders have been checked for sinking (and fixed if needed), by position key.
         // By entity id: a node newly spawned on the same spot is a different node and gets checked too.
@@ -148,12 +156,20 @@ namespace CheetosOreSpawnFix
             return false;
         }
 
+        const string BlockedResult = "kept: every free spot is near a player";
+
         static string Move(PopulationSample sample, NetworkEntity e, string why)
         {
             Vector3 from = e.transform.position;
-            BadPoints.Mark(BadPoints.PointOf(sample, e), why);
-            bool moved = sample.RequestMove(e, false);
+            bool moved, blocked;
+            PickPointPatch.AvoidPlayers = PlayerPositions();
+            PickPointPatch.BlockedByPlayers = false;
+            try { moved = sample.RequestMove(e, false); }
+            finally { blocked = PickPointPatch.BlockedByPlayers; PickPointPatch.AvoidPlayers = null; PickPointPatch.BlockedByPlayers = false; }
             Buried.Sync();
+            // Every free spot is near a player: leave it where it is and try again later, rather than removing it.
+            if (!moved && blocked) return BlockedResult;
+            BadPoints.Mark(BadPoints.PointOf(sample, e), why);
             if (!moved)
             {
                 // Every point is taken: remove it as if mined; the group's next refill puts a new node on a good point.
@@ -273,7 +289,8 @@ namespace CheetosOreSpawnFix
                 if (!_ignoreAge && !_clock.Due(Key(e), now, Main.Settings.UntouchedHours)) { _young++; return; }
                 if (PlayerNear(e.transform.position, players)) { _near++; return; }
                 string r = Move(sample, e, "buried and untouched");
-                if (r.StartsWith("moved")) _moved++; else _replaced++;
+                if (r == BlockedResult) _near++;
+                else if (r.StartsWith("moved")) _moved++; else _replaced++;
             }
         }
     }
