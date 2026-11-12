@@ -15,7 +15,7 @@ namespace CheetosOreSpawnFix
     // to load itself are saved and unloaded again afterwards; levels a player was already on are saved and left loaded.
     public static class Reset
     {
-        enum Stage { Start, WaitLoad, Tidy }
+        enum Stage { Start, WaitLoad, Tidy, SurfaceWait }
 
         sealed class Job
         {
@@ -29,9 +29,12 @@ namespace CheetosOreSpawnFix
             public List<PopulationSample> Groups;
             public string Cleared1;
             public int Phase;
+            public object SweepRun;
             public int LevelsDone, Cleared, Skipped;
+            public List<LocationChunk> SurfaceLoaded = new List<LocationChunk>();
         }
 
+        public const double SweepSliceMs = 4.0;
         public const float LoadTimeout = 180f, SettleSeconds = 5f, EmptyLevelSeconds = 30f, TidyTimeout = 60f;
         static Job _job;
 
@@ -136,8 +139,24 @@ namespace CheetosOreSpawnFix
                     j.Cleared1 = Clear(groups, j);
                     j.Groups = groups;
                     j.Phase = 0;
+            j.SweepRun = null;
                     j.Deadline = now + TidyTimeout;
                     j.Stage = Stage.Tidy;
+                    return;
+                }
+
+                case Stage.SurfaceWait:
+                {
+                    List<PopulationSample> groups = SurfaceGroups();
+                    if (groups.Count == 0 || j.SurfaceLoaded.Any(c => c != null && !c.IsLoaded))
+                    {
+                        if (now > j.Deadline) { j.Skipped++; Main.Log("reset surface: the quarry did not load within " + LoadTimeout.ToString("0") + " s, skipped"); ReleaseSurface(j); Finish(null); }
+                        return;
+                    }
+                    int spawned = groups.Sum(g => g.SpawnedEntities.Count);
+                    if (spawned != j.LastSpawned) { j.LastSpawned = spawned; j.SettleUntil = now + SettleSeconds; return; }
+                    if (now < j.SettleUntil) return;
+                    BeginSurface(j, groups, now);
                     return;
                 }
 
@@ -202,10 +221,16 @@ namespace CheetosOreSpawnFix
             bool busy = BadPoints.PendingChecks > 0 || BadPoints.Queued > 0;
             switch (j.Phase)
             {
-                case 0: // wait for the new nodes' buried checks, then sweep
-                    if (busy && now < j.Deadline) return false;
-                    string r = Sweep.RunOnce(true);
-                    if (!r.StartsWith("moved 0,")) Main.Log("reset " + Name(j.Level) + ": sweep " + r);
+                case 0: // wait for the new nodes' buried checks, then sweep (a few milliseconds a frame)
+                    if (j.SweepRun == null)
+                    {
+                        if (busy && now < j.Deadline) return false;
+                        j.SweepRun = Sweep.Begin(true);
+                    }
+                    string r;
+                    if (!Sweep.Step(j.SweepRun, SweepSliceMs, out r)) return false;
+                    j.SweepRun = null;
+                    if (!r.StartsWith("moved 0,") || !r.EndsWith("nudged out 0, removed 0")) Main.Log("reset " + Name(j.Level) + ": sweep " + r);
                     j.Phase = 1;
                     j.Deadline = now + 2f; // nodes the sweep removed are only gone at the end of the frame
                     return false;
@@ -250,8 +275,15 @@ namespace CheetosOreSpawnFix
 
         static void Release(Job j)
         {
-            if (j.Level == OreGroups.Surface && j.Groups != null)
-                foreach (LocationChunk c in j.Groups.Where(g => g != null).Select(g => g.Chunk).Distinct()) if (c != null && c.IsLoaded) c.Save();
+            if (j.Level == OreGroups.Surface)
+            {
+                if (j.Groups != null)
+                    foreach (LocationChunk c in j.Groups.Where(g => g != null).Select(g => g.Chunk).Distinct())
+                        if (c != null && c.IsLoaded && !j.SurfaceLoaded.Contains(c)) c.Save();
+                ReleaseSurface(j);
+                j.Level = -2;
+                return;
+            }
             CaveLayerManager m = Object.FindObjectOfType<CaveLayerManager>();
             ICaveLayer layer;
             if (m == null || j.Level < 0 || !m.Layers.TryGetValue(j.Level, out layer) || layer.Chunk == null) return;
@@ -267,22 +299,55 @@ namespace CheetosOreSpawnFix
 
         static string Name(int level) { return level == OreGroups.Surface ? "surface" : "level " + level; }
 
-        // The surface last, if asked for and loaded. It is never loaded or unloaded by the reset. False when there is
-        // nothing more to do.
+        // Where the surface ore is: the plot outside the mine entrance and the quarry above it.
+        public static readonly Vector2 QuarryCentre = new Vector2(-900f, -250f);
+        public const float QuarryRadius = 150f;
+
+        static List<PopulationSample> SurfaceGroups()
+        {
+            return OreGroups.Loaded().Where(g => OreGroups.IsOre(g) && OreGroups.LevelOf(g) == OreGroups.Surface).ToList();
+        }
+
+        // The surface last, if asked for. If nobody is near the quarry, its chunks are loaded for the reset and let go
+        // again afterwards. False when there is nothing more to do.
         static bool StartSurface(Job j, float now)
         {
             if (!j.Surface) return false;
             j.Surface = false;
-            List<PopulationSample> groups = OreGroups.Loaded().Where(g => OreGroups.IsOre(g) && OreGroups.LevelOf(g) == OreGroups.Surface).ToList();
-            if (groups.Count == 0) { j.Skipped++; Main.Log("reset surface: not loaded, skipped (someone has to be near the quarry, then run orefix reset surface)"); return false; }
             j.Level = OreGroups.Surface;
             j.WeLoaded = false;
+            foreach (LocationChunk c in Object.FindObjectsOfType<LocationChunk>())
+            {
+                if (c == null || c.IsLoaded || c.GetComponent<CaveLayerStreamer>() != null) continue;
+                Vector3 p = c.transform.position;
+                if (Vector2.Distance(QuarryCentre, new Vector2(p.x, p.z)) > QuarryRadius) continue;
+                c.ForceLoad();
+                j.SurfaceLoaded.Add(c);
+            }
+            if (j.SurfaceLoaded.Count > 0) Main.Log("reset surface: loading " + j.SurfaceLoaded.Count + " area(s) around the quarry");
+            j.Deadline = now + LoadTimeout;
+            j.SettleUntil = 0;
+            j.LastSpawned = -1;
+            j.Stage = Stage.SurfaceWait;
+            return true;
+        }
+
+        static void BeginSurface(Job j, List<PopulationSample> groups, float now)
+        {
             j.Cleared1 = Clear(groups, j);
             j.Groups = groups;
             j.Phase = 0;
+            j.SweepRun = null;
             j.Deadline = now + TidyTimeout;
             j.Stage = Stage.Tidy;
-            return true;
+        }
+
+        // Let go of the quarry chunks the reset loaded (saving them); the rest just get saved.
+        static void ReleaseSurface(Job j)
+        {
+            foreach (LocationChunk c in j.SurfaceLoaded)
+                if (c != null && c.IsLoaded) c.ForceUnloadAndSave();
+            j.SurfaceLoaded.Clear();
         }
 
         static void Finish(string why)

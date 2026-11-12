@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.2 (12 Nov 2026)
+
+- **Sunk boulders get pulled out of the rock.** A node is 3 to 5 boulders, and on uneven ground some of them end up half inside the floor, a wall or a cave rock. Any boulder more than 20% hidden is now nudged out the smallest distance that frees it. New nodes are fixed as they spawn, and older ones by the regular check. A boulder that can't be freed is removed. On a test level, sunk boulders went from 180 of 322 to none. The limit is the new `max_sunk` setting.
+- **Fix:** old buried nodes on busy servers were basically never moved, because the 6-hour untouched timer restarted every time an area unloaded. It now keeps counting.
+- **Fix:** a new buried node with a player close by was dropped from the move queue. It now waits and tries again 30 seconds later.
+- `orefix reset surface` and `reset all` load the quarry themselves. Nobody has to be there.
+- New `orefix sunk` command shows how sunk each node's boulders are.
+
 ## 1.1.1 (11 Nov 2026)
 
 - **New: `orefix reset`.** Clears and respawns the ore on every mine level that exists, with the right mix, without wiping the mine. Good for servers that went bad before the mod was installed. Use `reset all`, `reset mines`, `reset surface`, a single level number, or `reset stop`. It takes about 15 seconds per level.

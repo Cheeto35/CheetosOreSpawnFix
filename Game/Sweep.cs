@@ -64,7 +64,7 @@ namespace CheetosOreSpawnFix
                 {
                     string r = _running.Result;
                     _running = null;
-                    if (!r.StartsWith("moved 0,")) Main.Log("sweep: " + r);
+                    if (!r.StartsWith("moved 0,") || !r.EndsWith("nudged out 0, removed 0")) Main.Log("sweep: " + r);
                 }
             }
         }
@@ -85,10 +85,22 @@ namespace CheetosOreSpawnFix
             Main.Log(OreGroups.Label(group) + ": new cluster " + e.Identifier + " at " + e.transform.position.ToString("F1") + " is buried; queued to move");
         }
 
+        static readonly Dictionary<NetworkEntity, float> _retryAt = new Dictionary<NetworkEntity, float>();
+        public const float RetrySeconds = 30f;
+
         static void MoveQueued(NetworkEntity e, PopulationSample group)
         {
-            if (e == null || group.Chunk == null || !group.SpawnedEntities.ContainsKey(e)) return;
-            if (PlayerNear(e.transform.position, PlayerPositions())) return; // the sweep tries again later
+            if (e == null || group.Chunk == null || !group.SpawnedEntities.ContainsKey(e)) { if (e != null) _retryAt.Remove(e); return; }
+            float now = Time.realtimeSinceStartup, at;
+            if (_retryAt.TryGetValue(e, out at) && now < at) { BadPoints.QueueMove(e, group); return; } // not time yet
+            if (PlayerNear(e.transform.position, PlayerPositions()))
+            {
+                // Someone is right there: keep it queued and try again shortly, rather than leaving it to the timed sweep.
+                _retryAt[e] = now + RetrySeconds;
+                BadPoints.QueueMove(e, group);
+                return;
+            }
+            _retryAt.Remove(e);
             string r = Move(group, e, "buried when it spawned");
             Main.Log(OreGroups.Label(group) + ": queued buried node " + r);
         }
@@ -110,6 +122,17 @@ namespace CheetosOreSpawnFix
             float r2 = (float)(Main.Settings.PlayerRadius * Main.Settings.PlayerRadius);
             foreach (Vector3 p in players) if ((p - at).sqrMagnitude <= r2) return true;
             return false;
+        }
+
+        // Nodes whose boulders have been checked for sinking (and fixed if needed), by position key.
+        // By entity id: a node newly spawned on the same spot is a different node and gets checked too.
+        static readonly HashSet<uint> _clean = new HashSet<uint>();
+
+        // A node's clock key: where it stands and what it is. Entity ids change each time an area loads.
+        public static string Key(NetworkEntity e)
+        {
+            Vector3 p = e.transform.position;
+            return Mathf.RoundToInt(p.x * 10f) + "," + Mathf.RoundToInt(p.y * 10f) + "," + Mathf.RoundToInt(p.z * 10f) + ":" + OreTable.OreOf(e);
         }
 
         static bool Touched(NetworkEntity e)
@@ -142,6 +165,16 @@ namespace CheetosOreSpawnFix
 
         // One full pass over every loaded group in one go (the `orefix sweep` command). ignoreAge moves buried nodes
         // regardless of how long they sat untouched.
+        // A pass worked off a slice at a time by someone else (the reset), so a big level doesn't stall one frame.
+        public static object Begin(bool ignoreAge) { return new Run(ignoreAge); }
+        public static bool Step(object run, double budgetMs, out string result)
+        {
+            Run r = (Run)run;
+            bool done = r.Step(budgetMs);
+            result = done ? r.Result : null;
+            return done;
+        }
+
         public static string RunOnce(bool ignoreAge)
         {
             Run r = new Run(ignoreAge);
@@ -155,7 +188,7 @@ namespace CheetosOreSpawnFix
             readonly bool _ignoreAge;
             readonly List<KeyValuePair<PopulationSample, NetworkEntity>> _todo = new List<KeyValuePair<PopulationSample, NetworkEntity>>();
             readonly HashSet<uint> _seen = new HashSet<uint>();
-            int _next, _moved, _near, _young, _replaced, _buried;
+            int _next, _moved, _near, _young, _replaced, _buried, _lifted, _removed;
 
             public Run(bool ignoreAge)
             {
@@ -167,7 +200,7 @@ namespace CheetosOreSpawnFix
 
             public string Result
             {
-                get { return "moved " + _moved + ", skipped (player near) " + _near + ", skipped (young) " + _young + ", replaced " + _replaced + " (of " + _buried + " buried)"; }
+                get { return "moved " + _moved + ", skipped (player near) " + _near + ", skipped (young) " + _young + ", replaced " + _replaced + " (of " + _buried + " buried); sunk boulders nudged out " + _lifted + ", removed " + _removed; }
             }
 
             // Work until the budget is used up; true once every cluster has been looked at.
@@ -185,15 +218,28 @@ namespace CheetosOreSpawnFix
                     _next++;
                     if (e == null || sample.Chunk == null || !sample.SpawnedEntities.ContainsKey(e)) continue; // mined or unloaded since the pass began
                     _seen.Add(e.Identifier);
-                    _clock.Seen(e.Identifier, Touched(e), now);
+                    string key = Key(e);
+                    _clock.Seen(key, Touched(e), now);
+                    if (Unbury.On && !_clean.Contains(e.Identifier) && !PlayerNear(e.transform.position, players))
+                    {
+                        Unbury.Result u = Unbury.Fix(e);
+                        Unbury.Note(u);
+                        if (_clean.Count > 50000) _clean.Clear();
+                        _clean.Add(e.Identifier);
+                        _lifted += u.Lifted; _removed += u.Removed;
+                        if (e == null || !sample.SpawnedEntities.ContainsKey(e)) continue; // every boulder was removed
+                    }
                     if (!Buried.Is(e)) continue;
                     _buried++;
-                    if (!_ignoreAge && !_clock.Due(e.Identifier, now, Main.Settings.UntouchedHours)) { _young++; continue; }
+                    if (!_ignoreAge && !_clock.Due(key, now, Main.Settings.UntouchedHours)) { _young++; continue; }
                     if (PlayerNear(e.transform.position, players)) { _near++; continue; }
                     string r = Move(sample, e, "buried and untouched");
                     if (r.StartsWith("moved")) _moved++; else _replaced++;
                 }
-                foreach (uint id in _clock.Ids) if (!_seen.Contains(id)) { _clock.Forget(id); _parts.Remove(id); }
+                // Nodes in areas that have unloaded keep their clocks (an unloaded node can't be touched); only nodes not
+                // seen for two days are dropped.
+                _clock.Prune(now, 48 * 3600.0);
+                foreach (uint id in new List<uint>(_parts.Keys)) if (!_seen.Contains(id)) _parts.Remove(id);
                 return true;
             }
         }

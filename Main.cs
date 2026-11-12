@@ -5,7 +5,7 @@ using Alta.Console;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(CheetosOreSpawnFix.Main), "CheetosOreSpawnFix", "1.1.1", "Cheeto35")]
+[assembly: MelonInfo(typeof(CheetosOreSpawnFix.Main), "CheetosOreSpawnFix", "1.1.2", "Cheeto35")]
 [assembly: MelonGame("Alta", "A Township Tale")]
 
 namespace CheetosOreSpawnFix
@@ -28,7 +28,7 @@ namespace CheetosOreSpawnFix
             if (!IsServer) { Log("client: idle"); return; }
             LoadSettings();
             CommandService.CommandCollection.Collect(typeof(Main).Assembly);
-            Log("1.1.1 ready: enabled=" + Settings.Enabled + " keep_mix=" + Settings.KeepMix + " fix_buried=" + Settings.FixBuried);
+            Log("1.1.2 ready: enabled=" + Settings.Enabled + " keep_mix=" + Settings.KeepMix + " fix_buried=" + Settings.FixBuried);
         }
 
         public override void OnUpdate()
@@ -51,6 +51,7 @@ namespace CheetosOreSpawnFix
                     "sweep_minutes = 10      # how often the buried-node sweep runs",
                     "untouched_hours = 6     # a buried node must sit untouched this long before it is moved",
                     "player_radius = 10      # never move a node with a player this close (metres)",
+                    "max_sunk = 20           # a node is buried if more than this % of a boulder is hidden in rock or ground (100 = off)",
                     "buried_rays = 4         # of 6 rays from a node's centre, how many must start inside rock",
                     "" }));
             List<string> warnings = new List<string>();

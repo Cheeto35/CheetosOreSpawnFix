@@ -257,6 +257,33 @@ namespace CheetosOreSpawnFix
             return Buried.Detail(e);
         }
 
+        [Command("sunk", "How much of each node is hidden in rock or ground, worst first: sunk <level|surface> [how many=10]")]
+        public static string Sunk(string area, int show = 10)
+        {
+            string name, error;
+            List<PopulationSample> groups = Area(area, out name, out error);
+            if (groups == null) return error;
+            Buried.Sync();
+            List<KeyValuePair<double, string>> rows = new List<KeyValuePair<double, string>>();
+            int[] bands = new int[5];
+            int boulders = 0, over = 0; int[] overHist = new int[6];
+            foreach (NetworkEntity e in Clusters(groups))
+            {
+                Buried.SunkInfo si = Buried.Sunk(e);
+                double s = si.Share;
+                boulders += si.Boulders; over += si.Over; overHist[Math.Min(5, si.Over)]++;
+                bands[Math.Min(4, (int)(s * 5))]++;
+                int ore = OreTable.OreOf(e);
+                rows.Add(new KeyValuePair<double, string>(s, "id " + e.Identifier + " " + (ore >= 0 ? OreTable.Name(ore) : "?") + " sunk " + (100 * s).ToString("0") + "% | reach " + (Buried.IsByReach(e) ? "BURIED" : "ok")
+                    + " | worst " + si.WorstId + " at " + si.WorstCentre.ToString("F2") + " | stand " + si.Stand1.ToString("F2") + " | stand2 " + si.Stand2.ToString("F2")
+                    + (s * 100 > Main.Settings.MaxSunk ? " | OVER max_sunk" : "")));
+            }
+            StringBuilder sb = new StringBuilder(name + ": " + rows.Count + " clusters; worst boulder hidden: 0-20% " + bands[0] + ", 20-40% " + bands[1] + ", 40-60% " + bands[2] + ", 60-80% " + bands[3] + ", 80-100% " + bands[4]);
+            sb.Append(Environment.NewLine + "  boulders: " + boulders + ", over max_sunk: " + over + "; nodes with 0/1/2/3/4/5+ boulders over: " + string.Join("/", overHist.Select(x => x.ToString()).ToArray()));
+            foreach (KeyValuePair<double, string> kv in rows.OrderByDescending(x => x.Key).Take(show)) sb.Append(Environment.NewLine + "  " + kv.Value);
+            return sb.ToString();
+        }
+
         [Command("sweep", "Move buried nodes now: sweep [ignoreAge=true]")]
         public static string SweepNow(bool ignoreAge = true)
         {
