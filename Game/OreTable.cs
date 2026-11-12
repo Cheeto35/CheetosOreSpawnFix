@@ -19,14 +19,20 @@ namespace CheetosOreSpawnFix
         static readonly List<int[]> _subOre = new List<int[]>();   // sub-table item -> ore index
         static readonly List<Distribution> _ores = new List<Distribution>();
         static readonly Dictionary<string, int> _byPrefab = new Dictionary<string, int>();
-        static bool _tried, _ok;
+        static bool _tried, _ok, _warned;
 
         public static bool Load()
         {
             if (_tried) return _ok;
-            _tried = true;
+            // Early in startup the table isn't loaded yet: say so once and try again next time, rather than giving up
+            // on the ore mix for the whole session.
             Distribution core = Resources.FindObjectsOfTypeAll<Distribution>().FirstOrDefault(d => d.name == CoreName);
-            if (core == null) { Main.Log("WARNING: '" + CoreName + "' not found; ore mix is left to the game"); return false; }
+            if (core == null)
+            {
+                if (!_warned) { _warned = true; Main.Log("'" + CoreName + "' not loaded yet; ore mix is left to the game until it is"); }
+                return false;
+            }
+            _tried = true;
             _core = Traverse.Create(core).Field("items").GetValue<List<Distribution.Item>>();
             if (_core == null || _core.Count == 0) { Main.Log("WARNING: '" + CoreName + "' has no items; ore mix is left to the game"); return false; }
             PipelineFlattenDistribution flatten = new PipelineFlattenDistribution();

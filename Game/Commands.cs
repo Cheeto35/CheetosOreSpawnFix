@@ -49,7 +49,7 @@ namespace CheetosOreSpawnFix
                     if (e != null) yield return e;
         }
 
-        static string Mix(int[] counts, double[] shares)
+        internal static string Mix(int[] counts, double[] shares)
         {
             int total = counts.Sum();
             StringBuilder sb = new StringBuilder();
@@ -91,7 +91,7 @@ namespace CheetosOreSpawnFix
             return "buried: " + buried + " of " + total + " clusters (" + queued + " queued to move), bad points: " + BadPoints.Count;
         }
 
-        [Command("destroy", "Destroy ore clusters in an area, as if mined: destroy <level|surface> <ore name part> [count, -1 = all]")]
+        [Command("destroy", "Destroy ore clusters in an area, as if mined: destroy <level|surface> <ore name part, or all> [count, -1 = all]")]
         public static string Destroy(string area, string ore, int count = -1)
         {
             string name, error;
@@ -99,6 +99,7 @@ namespace CheetosOreSpawnFix
             if (groups == null) return error;
             if (!OreTable.Load()) return "ore table not found";
             string want = (ore ?? "").ToLowerInvariant();
+            if (want == "all" || want == "*") want = "";
             int done = 0;
             foreach (PopulationSample g in groups)
                 foreach (NetworkEntity e in g.SpawnedEntities.Keys.ToList())
@@ -270,5 +271,11 @@ namespace CheetosOreSpawnFix
 
         [Command("reload", "Reload UserData/CheetosOreSpawnFix/config.txt")]
         public static string Reload() { return Main.LoadSettings(); }
+
+        [Command("reset", "Clear and respawn the ore on every existing mine level, one at a time: reset <mines|surface|all|level number|stop>")]
+        public static string ResetOre(string what)
+        {
+            return (what ?? "").Trim().ToLowerInvariant() == "stop" ? Reset.Stop() : Reset.Begin(what);
+        }
     }
 }

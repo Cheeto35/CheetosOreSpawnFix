@@ -25,9 +25,9 @@ You need an A Township Tale server on the final game build (`main-1.7.2.1.42203`
 
 1. Stop the server.
 2. Drop `CheetosOreSpawnFix.dll` (it's in this folder, ready to use) into the server's `Mods` folder.
-3. Start the server. You should see `[CheetosOreSpawnFix] 1.1.0 ready` in the log.
+3. Start the server. You should see `[CheetosOreSpawnFix] 1.1.1 ready` in the log.
 
-Levels that had already gone bad before you installed it will fix themselves as players mine them. If you want a clean start, wipe the mine once.
+Levels that had already gone bad before you installed it will fix themselves as players mine them. If you'd rather start clean right away without wiping the mine, run `orefix reset all` in the server console (see [Resetting the ore on an existing server](#resetting-the-ore-on-an-existing-server)).
 
 To uninstall, stop the server and delete the DLL. The mod doesn't save anything into your world, so the game simply goes back to normal.
 
@@ -47,19 +47,220 @@ The first time it runs, the mod creates `UserData\CheetosOreSpawnFix\config.txt`
 
 ## Console commands
 
-Run these from the server's admin console. Where a command takes an area, give it a mine level number or `surface` (the plot and the quarry).
+Type these into the server's admin console. Every command starts with `orefix`, then the command name, then any extra words it needs, all separated by spaces:
 
-| command | what it does |
+```
+orefix census 3
+```
+
+Words in `<angle brackets>` below are required. Words in `[square brackets]` are optional and can be left off.
+
+### Areas
+
+Many commands work on one **area** at a time. An area is either:
+
+- **a mine level number**: `0` is the first level under the entrance, `1` is the next one down, and so on, or
+- **`surface`**: the little plot outside the mine entrance plus the big quarry above it. `quarry` means the same thing.
+
+The game only keeps a mine level loaded while a player is on it, and the mod can only see an area that's loaded. If a command says a level "is not loaded", either go down there, or load it with `orefix load` (see [Loading levels with nobody there](#loading-levels-with-nobody-there)). The surface is the same: someone has to be near the quarry.
+
+### Everyday commands
+
+#### `orefix census <area>`
+
+Counts the ore in an area and compares it with what the game is meant to spawn at that depth. Use it to check that a level looks healthy.
+
+```
+orefix census 12
+```
+```
+level 12: 49 ore clusters | Coal Boulder: 10 (20%) target 21% | Copper Boulder: 20 (41%) target 42% | Gold Boulder: 17 (35%) target 33% | Iron Boulder: 2 (4%) target 3% | buried: 0 of 50 clusters (0 queued to move), bad points: 2
+```
+
+- **ore clusters**: how many ore nodes are on the level right now.
+- **each ore**: how many of that ore there are, their share, and the share the game aims for. With the mod running, these stay close.
+- **buried**: nodes that are stuck in the rock where no one can mine them. "Queued to move" ones are about to be moved.
+- **bad points**: spawn spots the mod has stopped using because they kept burying nodes.
+
+#### `orefix groups`
+
+Lists every ore and sandstone spawn group the mod is looking after right now: one per loaded mine level, plus the surface ones. Each line shows how full the group is (for example `48/50`). It's a quick way to see which areas are loaded.
+
+```
+orefix groups
+```
+
+#### `orefix sweep [ignoreAge]`
+
+Moves buried nodes right now, instead of waiting for the regular check every 10 minutes. By default it also moves buried nodes that haven't sat untouched for 6 hours yet. Add `false` to keep the 6-hour rule.
+
+```
+orefix sweep
+orefix sweep false
+```
+
+#### `orefix save`
+
+Saves every loaded area to disk straight away. Run it before you stop the server so nothing since the last autosave is lost.
+
+```
+orefix save
+```
+
+### Resetting the ore on an existing server
+
+#### `orefix reset <mines|surface|all|level number|stop>`
+
+If you're adding the mod to a server whose mines have already gone bad, this replaces the old ore with a fresh, correct mix without wiping anything else.
+
+```
+orefix reset all        every mine level that exists, then the surface
+orefix reset mines      every mine level that exists, but not the surface
+orefix reset surface    just the plot and the quarry
+orefix reset 5          just level 5
+orefix reset stop       cancel a reset that's running
+```
+
+What it does, one level at a time from the top down:
+
+1. Loads the level if nobody is on it. It only visits levels that already exist, so it never creates new ones.
+2. Removes every ore node on the level, except any within 10 metres of a player, so nobody loses the rock they're hitting.
+3. Spawns the level full again with the right mix.
+4. Checks the new nodes. Any that landed inside the rock are moved, or removed if there's nowhere better, and that spot isn't used again. Then it fills any gaps once more.
+5. Saves the level. If the reset loaded it, it lets it unload again.
+
+**How long it takes:** about 15 seconds per level. Rough times for `orefix reset all`:
+
+| mine depth | time |
 |---|---|
-| `orefix census <level\|surface>` | the ore mix in an area next to its target, and how many nodes are buried |
-| `orefix groups` | every ore group the mod is looking after right now |
-| `orefix sweep` | look for buried nodes right now instead of waiting |
-| `orefix enable <true\|false>` | turn the mod on or off without a restart |
-| `orefix reload` | reread the config file |
-| `orefix save` | save all loaded areas (handy before stopping the server) |
-| `orefix perf` | how much time the mod is using on the server (add `true` to reset the numbers) |
+| 10 levels | about 3 minutes |
+| 25 levels | about 6 minutes |
+| 50 levels | about 13 minutes |
+| 100 levels (the deepest the game goes) | about 25 minutes |
 
-There are a few more commands for testing (`refill`, `destroy`, `load`, `unload`, `chunks`, `inspect`, `inspect1`, `set`). `destroy` really does remove ore, so be careful with it on a live server.
+A single level (`orefix reset 5`) or the surface takes under 20 seconds. Players can keep playing while it runs.
+
+It runs in the background, so the server keeps going while it works. Progress goes to the **server log**, one line per level:
+
+```
+reset started: 99 mine level(s) (0 to 101) and the surface. Progress goes to the server log, one line per level
+reset level 26: sweep moved 1, skipped (player near) 0, skipped (young) 0, replaced 1 (of 2 buried)
+reset level 26: cleared 22, now 21/23, 1 buried | Coal Boulder: 4 (19%) target 19% | Copper Boulder: 6 (29%) target 25% | Gold Boulder: 6 (29%) target 31% | Iron Boulder: 5 (24%) target 24%
+reset surface: not loaded, skipped (someone has to be near the quarry, then run orefix reset surface)
+reset done: 99 area(s) reset, 1 skipped, 2796 clusters cleared, 2440 on the levels now
+```
+
+Good to know:
+
+- **Back up your world first.** The old ore is gone for good once it's cleared.
+- It only touches ore. Sandstone and everything players have built or dropped are left alone.
+- Levels with no ore (like the trial levels and level 100) are skipped.
+- A level can end up a few nodes short of full, for example `27/33`. That means some of its spawn spots are inside the rock, so the mod stopped using them. That's expected, and the normal respawn fills whatever gaps are left over time.
+- Right after the server starts, wait a minute before running it. If the game hasn't finished loading the mines yet, `reset` tells you to try again.
+- The surface is only reset if it's loaded, so someone has to be near the quarry. If it isn't, the log says so. Run `orefix reset surface` later while someone's there.
+- The mod must be on, with `keep_mix` on, or the reset would just respawn the old vanilla mix. It refuses to start otherwise.
+
+### Settings without a restart
+
+These changes last until you run `orefix reload` or restart the server. To change a setting for good, edit `config.txt` (see [Settings](#settings)).
+
+#### `orefix enable <true|false>`
+
+Turns the whole mod on or off. Off means the game spawns ore exactly like vanilla.
+
+```
+orefix enable false
+orefix enable true
+```
+
+#### `orefix set <keep_mix|fix_buried> <true|false>`
+
+Turns one part of the mod on or off.
+
+```
+orefix set keep_mix false     respawned ore uses the game's normal random pick again
+orefix set fix_buried false   stop checking for and moving buried nodes
+```
+
+#### `orefix reload`
+
+Reads `config.txt` again. Use it after editing the file, or to undo any `enable` or `set` changes you made from the console.
+
+```
+orefix reload
+```
+
+### Admin and testing tools
+
+You won't need these for normal running, but they're handy for checking things or setting up a test.
+
+#### `orefix refill <area>`
+
+Spawns an area full right now, instead of waiting for the game's 10-minute respawn timer. It only fills empty spots and doesn't remove anything.
+
+```
+orefix refill 3
+```
+
+#### `orefix destroy <area> <ore> [count]`
+
+Removes ore nodes as if they'd been mined. **This really does remove ore**, so be careful on a live server.
+
+- `<ore>` is part of an ore name: `coal`, `copper`, `iron` and so on. `iron` matches every kind of iron. Use `all` for every ore.
+- `[count]` is how many to remove. Leave it off to remove all that match.
+
+```
+orefix destroy 3 coal 10     remove 10 coal nodes from level 3
+orefix destroy 3 all         remove every ore node from level 3
+orefix destroy surface coal  remove all the coal on the surface
+```
+
+To clear and refill a single area by hand, run `destroy <area> all` and then `refill <area>`. `orefix reset` does the same thing for you, more safely.
+
+#### `orefix perf [reset]`
+
+Shows how much server time the mod's work is taking, so you can check it isn't slowing anything down. Add `true` to reset the numbers to zero.
+
+```
+orefix perf
+orefix perf true
+```
+
+#### `orefix inspect <area>` and `orefix inspect1 <area> <id>`
+
+Lists every ore node in an area, with its ID, ore type, position, whether it counts as buried (`RAYS-BURIED` or `REACH-BURIED`), and a spot you can stand at to look at it. `inspect1` gives the full details for one node, using an ID from `inspect`.
+
+```
+orefix inspect 3
+orefix inspect1 3 48211
+```
+
+### Loading levels with nobody there
+
+#### `orefix load <level>`
+
+Loads a mine level on the server without a player on it, and keeps it loaded until you unload it. **If the level doesn't exist yet, this creates it**, and levels are built from the one above, so go down in order (`load 0`, `load 1`, `load 2`, ...). The game stops at level 100. The result goes to the server log; wait for `load: level 5 loaded` before using the level.
+
+```
+orefix load 5
+```
+
+#### `orefix unload <level>`
+
+Saves a level you loaded with `orefix load` and lets it unload again.
+
+```
+orefix unload 5
+```
+
+#### `orefix chunks <x> <z> <radius> [name or *]`
+
+Lists the world areas ("chunks") within `radius` metres of a map position, and whether each one is loaded. Add a chunk's name to load that one, or `*` to load every surface chunk in range. It's mainly for testing the quarry with nobody near it.
+
+```
+orefix chunks -900 -250 150      list the areas around the quarry
+orefix chunks -900 -250 150 *    load the quarry and the plot outside the mine
+```
 
 ## Building it yourself
 
