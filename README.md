@@ -96,7 +96,7 @@ orefix groups
 
 #### `orefix sweep [ignoreAge]`
 
-Runs the regular check right now, instead of waiting for it. It nudges sunk boulders out of the rock and moves nodes nobody can reach. By default it also moves unreachable nodes that haven't sat untouched for 6 hours yet. Add `false` to keep the 6-hour rule.
+Starts the regular check right now, instead of waiting for it. It nudges sunk boulders out of the rock and moves nodes nobody can reach. It works in the background a few milliseconds at a time, so it doesn't lag the server, and writes its result to the server log when it's done (a few seconds per loaded level). By default it also moves unreachable nodes that haven't sat untouched for 6 hours yet. Add `false` to keep the 6-hour rule.
 
 ```
 orefix sweep

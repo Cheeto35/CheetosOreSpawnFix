@@ -7,6 +7,7 @@
 - **Fix:** a new buried node with a player close by was dropped from the move queue. It now waits and tries again 30 seconds later.
 - `orefix reset surface` and `reset all` load the quarry themselves. Nobody has to be there.
 - New `orefix sunk` command shows how sunk each node's boulders are.
+- The boulder fixing is spread over several frames, so it doesn't lag the server. `orefix sweep` now runs in the background too and writes its result to the server log.
 
 ## 1.1.1 (11 Nov 2026)
 

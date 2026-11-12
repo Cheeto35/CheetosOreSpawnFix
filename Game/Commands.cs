@@ -284,14 +284,8 @@ namespace CheetosOreSpawnFix
             return sb.ToString();
         }
 
-        [Command("sweep", "Move buried nodes now: sweep [ignoreAge=true]")]
-        public static string SweepNow(bool ignoreAge = true)
-        {
-            System.Diagnostics.Stopwatch sw = Perf.Start();
-            string r = Sweep.RunOnce(ignoreAge);
-            Perf.Stop("sweep (one frame)", sw);
-            return r + " in " + sw.Elapsed.TotalMilliseconds.ToString("0.0") + " ms";
-        }
+        [Command("sweep", "Fix sunk boulders and move buried nodes now, in the background: sweep [ignoreAge=true]")]
+        public static string SweepNow(bool ignoreAge = true) { return Sweep.StartNow(ignoreAge); }
 
         [Command("perf", "How long the mod's work takes on the main thread: perf [reset=false]")]
         public static string PerfReport(bool reset = false) { return Perf.Report(reset); }

@@ -106,8 +106,10 @@ namespace CheetosOreSpawnFix
         }
 
         // Nudge one boulder out if it is over max_sunk. Backface hits must be on. Doesn't need physics in sync.
-        public static Outcome FixBoulder(NetworkEntity b, List<Vector3> obs, bool fake, double limit)
+        // Gives up (Stuck) after maxMs, leaving the boulder for the sweep, which works a slice at a time.
+        public static Outcome FixBoulder(NetworkEntity b, List<Vector3> obs, bool fake, double limit, double maxMs)
         {
+            System.Diagnostics.Stopwatch sw = System.Diagnostics.Stopwatch.StartNew();
             Collider[] own = b.GetComponentsInChildren<Collider>().Where(c => !c.isTrigger).ToArray();
             if (own.Length == 0) return Outcome.Fine;
             LocalSkin ls = SkinOf(b, own);
@@ -116,39 +118,95 @@ namespace CheetosOreSpawnFix
             if (skin.Count == 0 || UnderLimit(skin, Vector3.zero, obs, fake, limit)) return Outcome.Fine;
             for (float dist = Step; dist <= MaxNudge + 0.001f; dist += Step)
                 foreach (Vector3 w in Ways)
+                {
                     if (UnderLimit(skin, w * dist, obs, fake, limit)) { b.transform.position += w * dist; return Outcome.Lifted; }
+                    if (sw.Elapsed.TotalMilliseconds > maxMs) return Outcome.Stuck;
+                }
             return Outcome.Stuck;
         }
 
         // Fix every boulder of an existing cluster that is over max_sunk; a boulder no nudge frees is removed (as if
-        // mined, without drops), as long as the cluster keeps at least one. Call with physics in sync.
+        // mined, without drops), as long as the cluster keeps at least one. All in one go; call with physics in sync.
         public static Result Fix(NetworkEntity cluster)
         {
-            Result r = new Result();
-            if (cluster == null) return r;
-            bool fake = Buried.FakeTerrain(Buried.Centre(cluster));
-            List<Vector3> obs = Buried.Observers(cluster, fake);
-            if (obs.Count == 0) return r; // shut in on all sides: the reach check deals with it
-            List<NetworkEntity> boulders = cluster.GetComponentsInChildren<NetworkEntity>().Where(x => x != cluster).ToList();
+            Job j = Start(cluster);
+            Continue(j, double.MaxValue, System.Diagnostics.Stopwatch.StartNew());
+            return j.R;
+        }
+
+        // The same work, done a slice at a time so a badly sunk node doesn't stall a frame. A job only reads the world
+        // until it has an answer for a boulder, so it can safely pause between frames.
+        public sealed class Job
+        {
+            public NetworkEntity Cluster;
+            public Result R = new Result();
+            internal IEnumerator<bool> Steps;
+            public bool Done;
+        }
+
+        public static Job Start(NetworkEntity cluster)
+        {
+            Job j = new Job { Cluster = cluster };
+            j.Steps = FixSteps(j).GetEnumerator();
+            return j;
+        }
+
+        // Work on the job until it is done (true) or the stopwatch passes budgetMs (false: call again next frame).
+        public static bool Continue(Job j, double budgetMs, System.Diagnostics.Stopwatch sw)
+        {
+            if (j.Done) return true;
             bool old = Physics.queriesHitBackfaces;
             Physics.queriesHitBackfaces = true;
             try
             {
-                foreach (NetworkEntity b in boulders)
-                {
-                    r.Checked++;
-                    Outcome o = FixBoulder(b, obs, fake, Limit);
-                    if (o == Outcome.Lifted) r.Lifted++;
-                    else if (o == Outcome.Stuck)
-                    {
-                        r.Over++;
-                        if (boulders.Count(x => x != null) - r.Removed > 1) { b.SceneDestroy(); r.Removed++; }
-                    }
-                }
+                while (sw.Elapsed.TotalMilliseconds < budgetMs)
+                    if (!j.Steps.MoveNext()) { j.Done = true; return true; }
+                return false;
             }
             finally { Physics.queriesHitBackfaces = old; }
-            if (r.Lifted > 0) Physics.SyncTransforms();
-            return r;
+        }
+
+        const int TriesPerStep = 6;
+
+        static IEnumerable<bool> FixSteps(Job j)
+        {
+            NetworkEntity cluster = j.Cluster;
+            Result r = j.R;
+            if (cluster == null) yield break;
+            bool fake = Buried.FakeTerrain(Buried.Centre(cluster));
+            List<Vector3> obs = Buried.Observers(cluster, fake);
+            if (obs.Count == 0) yield break; // shut in on all sides: the reach check deals with it
+            yield return true;
+            List<NetworkEntity> boulders = cluster.GetComponentsInChildren<NetworkEntity>().Where(x => x != cluster).ToList();
+            double limit = Limit;
+            bool moved = false;
+            foreach (NetworkEntity b in boulders)
+            {
+                if (b == null || cluster == null) continue; // mined since the job began
+                Collider[] own = b.GetComponentsInChildren<Collider>().Where(c => !c.isTrigger).ToArray();
+                if (own.Length == 0) continue;
+                LocalSkin ls = SkinOf(b, own);
+                if (ls.Points.Length == 0) continue;
+                List<Vector3> skin = SkinNow(b, ls);
+                r.Checked++;
+                bool fine = UnderLimit(skin, Vector3.zero, obs, fake, limit);
+                yield return true;
+                if (fine) continue;
+                Vector3 best = Vector3.zero;
+                bool found = false;
+                int tries = 0;
+                for (float dist = Step; dist <= MaxNudge + 0.001f && !found; dist += Step)
+                    foreach (Vector3 w in Ways)
+                    {
+                        if (UnderLimit(skin, w * dist, obs, fake, limit)) { best = w * dist; found = true; break; }
+                        if (++tries % TriesPerStep == 0) yield return true;
+                    }
+                if (b == null) continue;
+                if (found) { b.transform.position += best; moved = true; r.Lifted++; continue; }
+                r.Over++;
+                if (boulders.Count(x => x != null) - r.Removed > 1) { b.SceneDestroy(); r.Removed++; }
+            }
+            if (moved) Physics.SyncTransforms();
         }
 
         // Totals for the log and `orefix census`.
@@ -168,7 +226,7 @@ namespace CheetosOreSpawnFix
         sealed class Spot { public int Frame; public List<Vector3> Obs; public bool Fake; }
         // A big refill places every missing node in one frame. Spend at most this long per frame here; nodes past it
         // are left for the sweep (players then see the fix the next time they load the area).
-        public const double FrameBudgetMs = 8.0;
+        public const double FrameBudgetMs = 6.0, PerBoulderMs = 2.0;
         static int _budgetFrame = -1;
         static double _spentMs;
         static readonly Dictionary<int, Spot> _spots = new Dictionary<int, Spot>();
@@ -200,7 +258,7 @@ namespace CheetosOreSpawnFix
                 }
                 if (s.Obs.Count == 0) return;
                 Physics.queriesHitBackfaces = true;
-                Unbury.Outcome o = Unbury.FixBoulder(child, s.Obs, s.Fake, Main.Settings.MaxSunk / 100.0);
+                Unbury.Outcome o = Unbury.FixBoulder(child, s.Obs, s.Fake, Main.Settings.MaxSunk / 100.0, System.Math.Min(PerBoulderMs, FrameBudgetMs - _spentMs));
                 if (o == Unbury.Outcome.Lifted) { Unbury.Lifted++; Main.Log("spawn: nudged sunk boulder " + child.Identifier + " out to " + child.transform.position.ToString("F2")); }
                 else if (o == Unbury.Outcome.Stuck) Unbury.StuckAtSpawn++;
             }
