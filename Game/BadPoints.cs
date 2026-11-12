@@ -111,9 +111,12 @@ namespace CheetosOreSpawnFix
     [HarmonyPatch(typeof(PopulationDefinition), "IsPositionValid")]
     static class BadPointPatch
     {
-        static void Postfix(SpawnPoint point, ref bool __result)
+        static void Postfix(PopulationDefinition __instance, SpawnPoint point, ref bool __result)
         {
-            if (__result && Main.IsServer && Main.Settings.Enabled && Main.Settings.FixBuried && BadPoints.Has(point)) __result = false;
+            if (!__result || !Main.IsServer || !Main.Settings.Enabled || !Main.Settings.FixBuried) return;
+            // Only the ore and sandstone groups: crystals, wyrms and every other population always stay vanilla.
+            if (__instance == null || (__instance.name != Levels.BoulderGroup && __instance.name != Levels.SandstoneGroup)) return;
+            if (BadPoints.Has(point)) __result = false;
         }
     }
 }

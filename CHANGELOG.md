@@ -5,6 +5,7 @@
 - **Fix:** ore could appear right in front of players. When the mod moved a buried node, it only checked for players at the spot the node was leaving, not the spot it was going to, and players see a move straight away. A moved node now never lands within 30 metres of a player (or `player_radius`, if that's bigger).
 - If every free spot is near a player, the buried node stays where it is and the mod tries again 30 seconds later, instead of removing it.
 - The respawn timer is unchanged: ore respawns at the game's normal rate. `orefix refill` still respawns an area by hand.
+- The bad-spawn-point check now only ever looks at the ore and sandstone groups, so crystals, wyrms and everything else always spawn exactly like the normal game.
 
 ## 1.1.2 (12 Nov 2026)
 
