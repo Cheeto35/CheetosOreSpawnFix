@@ -133,16 +133,16 @@ What it does, one level at a time from the top down:
 4. Checks the new nodes. Sunk boulders are nudged out of the rock. Nodes that can't be reached at all are moved, or removed if there's nowhere better, and that spot isn't used again. Then it fills any gaps once more.
 5. Saves the level. If the reset loaded it, it lets it unload again.
 
-**How long it takes:** about 15 seconds per level. Rough times for `orefix reset all`:
+**How long it takes:** about 15 to 25 seconds per level. Big levels with lots of sunk boulders take the longest. Rough times for `orefix reset all`:
 
 | mine depth | time |
 |---|---|
-| 10 levels | about 3 minutes |
-| 25 levels | about 6 minutes |
-| 50 levels | about 13 minutes |
-| 100 levels| about 25 minutes |
+| 10 levels | about 3 to 4 minutes |
+| 25 levels | about 8 minutes |
+| 50 levels | about 15 minutes |
+| 100 levels | about 30 to 40 minutes |
 
-A single level (`orefix reset 5`) or the surface takes under 20 seconds. Players can keep playing while it runs.
+A single level (`orefix reset 5`) or the surface takes under half a minute. Players can keep playing while it runs.
 
 It runs in the background, so the server keeps going while it works. Progress goes to the **server log**, one line per level:
 
