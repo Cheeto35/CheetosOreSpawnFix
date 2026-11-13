@@ -168,15 +168,21 @@ namespace CheetosOreSpawnFix
         static string Move(PopulationSample sample, NetworkEntity e, string why)
         {
             Vector3 from = e.transform.position;
-            bool moved, blocked;
-            PickPointPatch.AvoidPlayers = PlayerPositions();
-            PickPointPatch.BlockedByPlayers = false;
-            try { moved = sample.RequestMove(e, false); }
-            finally { blocked = PickPointPatch.BlockedByPlayers; PickPointPatch.AvoidPlayers = null; PickPointPatch.BlockedByPlayers = false; }
-            Buried.Sync();
+            // The spot it was buried on (the move switches the node to its new spot, so look first).
+            SpawnPoint was = BadPoints.PointOf(sample, e);
+            bool moved = false, blocked = false;
+            // A crystal loaded from a save has no spot attached, and the game's move needs one: remove and respawn it.
+            if (was != null)
+            {
+                PickPointPatch.AvoidPlayers = PlayerPositions();
+                PickPointPatch.BlockedByPlayers = false;
+                try { moved = sample.RequestMove(e, false); }
+                finally { blocked = PickPointPatch.BlockedByPlayers; PickPointPatch.AvoidPlayers = null; PickPointPatch.BlockedByPlayers = false; }
+                Buried.Sync();
+            }
             // Every free spot is near a player: leave it where it is and try again later, rather than removing it.
             if (!moved && blocked) return BlockedResult;
-            BadPoints.Mark(BadPoints.PointOf(sample, e), why);
+            BadPoints.Mark(was, why);
             if (!moved)
             {
                 // Every point is taken: remove it as if mined; the group's next refill puts a new node on a good point.

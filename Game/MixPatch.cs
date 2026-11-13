@@ -16,6 +16,16 @@ namespace CheetosOreSpawnFix
     {
         public const string OrePrefab = "Rock Cluster";
         public const string SandstonePrefab = "Sandstone Cluster";
+        public const string CrystalPrefab = "Crystal Cluster Blue";
+
+        // Which kind of managed group a cluster prefab spawns from, or None.
+        public static OreGroups.Kind KindOfPrefab(string prefab)
+        {
+            if (prefab == OrePrefab) return OreGroups.Kind.Ore;
+            if (prefab == SandstonePrefab) return OreGroups.Kind.Sandstone;
+            if (prefab == CrystalPrefab) return OreGroups.Kind.Crystal;
+            return OreGroups.Kind.None;
+        }
         static readonly Dictionary<PopulationSample, float> _lastLog = new Dictionary<PopulationSample, float>();
 
         // A refill spawns all of a group's missing clusters in one frame. Count the group's ores once per frame and
@@ -26,12 +36,13 @@ namespace CheetosOreSpawnFix
 
         // The group a newly generated cluster belongs to: the one spawning it, or (if the game generates it some other
         // way) the mine level it is on.
-        static PopulationSample GroupOf(NetworkEntity entity, bool ore)
+        static PopulationSample GroupOf(NetworkEntity entity, OreGroups.Kind kind)
         {
             PopulationSample g = OreGroups.Spawning;
-            if (g != null && OreGroups.IsManaged(g) && OreGroups.IsOre(g) == ore) return g;
+            if (g != null && OreGroups.KindOf(g) == kind) return g;
             MineLevel level = Levels.At(entity.transform.position);
-            return level == null ? null : ore ? level.Boulders : level.Sandstone;
+            if (level == null) return null;
+            return kind == OreGroups.Kind.Ore ? level.Boulders : kind == OreGroups.Kind.Sandstone ? level.Sandstone : kind == OreGroups.Kind.Crystal ? level.Crystals : null;
         }
 
         static void Prefix(ClusterGenerator __instance, SpawnData spawnData)
@@ -42,7 +53,7 @@ namespace CheetosOreSpawnFix
                 if (!Main.IsServer || !Main.Settings.Enabled || !Main.Settings.KeepMix) return;
                 NetworkEntity entity = __instance.Entity;
                 if (entity == null || OreTable.Clean(entity.name) != OrePrefab) return;
-                PopulationSample group = GroupOf(entity, true);
+                PopulationSample group = GroupOf(entity, OreGroups.Kind.Ore);
                 if (group == null || !OreTable.Load()) return;
                 double[] shares = OreTable.TargetShares(spawnData != null && spawnData.Attributes != null ? spawnData.Attributes : OreGroups.AttributesOf(group));
                 int frame = Time.frameCount;
@@ -82,9 +93,9 @@ namespace CheetosOreSpawnFix
                 if (!Main.IsServer || !Main.Settings.Enabled || !Main.Settings.FixBuried) return;
                 NetworkEntity entity = __instance.Entity;
                 if (entity == null) return;
-                string prefab = OreTable.Clean(entity.name);
-                if (prefab != OrePrefab && prefab != SandstonePrefab) return;
-                PopulationSample group = GroupOf(entity, prefab == OrePrefab);
+                OreGroups.Kind kind = KindOfPrefab(OreTable.Clean(entity.name));
+                if (kind == OreGroups.Kind.None) return;
+                PopulationSample group = GroupOf(entity, kind);
                 if (group != null) BadPoints.QueueCheck(entity, group);
             }
             catch (Exception e) { Main.Log("buried check error: " + e.Message); }

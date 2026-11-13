@@ -89,8 +89,8 @@ namespace CheetosOreSpawnFix
         {
             if (!Main.IsServer || !Main.Settings.Enabled || !Main.Settings.FixBuried) return true;
             if (BadPoints.Count == 0 && AvoidPlayers == null) return true;
-            // Only the mine node groups this mod manages; every other population (wyrms, crystals, ...) stays vanilla.
-            if (definition == null || (definition.name != Levels.BoulderGroup && definition.name != Levels.SandstoneGroup)) return true;
+            // Only the groups this mod looks after (ore, sandstone, mining crystals); every other population (wyrms, ...) stays vanilla.
+            if (definition == null || OreGroups.KindOf(definition.name) == OreGroups.Kind.None) return true;
             System.Diagnostics.Stopwatch sw = Perf.Start();
             List<SpawnPoint> ok = new List<SpawnPoint>();
             bool nearOnly = false;
@@ -114,8 +114,8 @@ namespace CheetosOreSpawnFix
         static void Postfix(PopulationDefinition __instance, SpawnPoint point, ref bool __result)
         {
             if (!__result || !Main.IsServer || !Main.Settings.Enabled || !Main.Settings.FixBuried) return;
-            // Only the ore and sandstone groups: crystals, wyrms and every other population always stay vanilla.
-            if (__instance == null || (__instance.name != Levels.BoulderGroup && __instance.name != Levels.SandstoneGroup)) return;
+            // Only the groups the mod looks after (ore, sandstone, mining crystals): wyrms and every other population stay vanilla.
+            if (__instance == null || OreGroups.KindOf(__instance.name) == OreGroups.Kind.None) return;
             if (BadPoints.Has(point)) __result = false;
         }
     }

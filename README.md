@@ -10,6 +10,8 @@ The game decides a node's ore type once, when the node spawns. After that it nev
 
 On top of that, the game has an already existing "is this spot blocked?" check and its switched off for ore. Some nodes spawn partly or fully inside the cave walls. Nobody can mine those, so they sit there forever and take up a spawn spot.
 
+Mining crystals have a worse problem: they never come back at all. The game only works out where crystals can grow the first time a mine level is ever created. After that, every time the level loads (a restart, or nobody being down there for a while) the crystal group has nowhere to put them, so a mined crystal is gone for good.
+
 It's worse than it looks, because a node is really a little pile of 3 to 5 boulders that the game lays out the same way every time, whatever the ground is like. On a bumpy cave floor or a slope in the quarry, some of those boulders end up half inside the floor, a wall, or one of the big cave rocks, even when the rest of the node looks fine. On a typical mine level more than half the boulders were at least partly sunk.
 
 ## What the mod does
@@ -17,6 +19,7 @@ It's worse than it looks, because a node is really a little pile of 3 to 5 bould
 - **Keeps each level's ore mix where the game intended.** When a node respawns, the mod picks whichever ore that level is shortest on, based on the game's own odds for that depth. Coal can't take over anymore.
 - **Does the same on the surface.** The little plot outside the mine entrance and the big quarry above it (the one you cross to get to the climbing tower) keep the game's surface mix: about two coal for every copper.
 - **Pulls sunk boulders out of the rock.** Any boulder that's more than 20% hidden in the floor, a wall or a rock gets nudged the smallest distance (up or to the side) that frees it. New nodes are fixed as they spawn, before any player sees them. Older nodes get fixed by the regular check, and players see the change the next time they load that area. A boulder that can't be freed at all is removed.
+- **Makes mined crystals respawn.** Every time a level loads, the mod has the game work out the crystal spots again, exactly as it did when the level was first made. Crystals then respawn on the same 10-minute timer as ore, up to the game's own limit for the level. They also get the same buried and sunk fixes as ore nodes. Nothing else the game only makes once (teleport totems and so on) is made again.
 - **Moves nodes that can't be reached at all.** If a whole node lands inside the rock, it gets moved. If a spot keeps doing that, it's not used again.
 - **Cleans up old buried nodes.** Every 10 minutes the mod checks the loaded areas. Unreachable nodes that have sat untouched for 6 hours get moved somewhere minable. The 6 hours keeps counting while an area is unloaded, so this works on busy servers too.
 
@@ -43,6 +46,7 @@ The first time it runs, the mod creates `UserData\CheetosOreSpawnFix\config.txt`
 | `enabled` | `true` | turn the whole mod off without uninstalling it |
 | `keep_mix` | `true` | keep the ore mix on target in the mines and on the surface |
 | `fix_buried` | `true` | fix sunk boulders, move buried nodes, and avoid spots that bury them |
+| `respawn_crystals` | `true` | let mined crystals respawn after a level has loaded again (see above); `false` is the normal game, where they don't |
 | `max_sunk` | `20` | how much of a boulder (in %) may be hidden in rock or ground before it's nudged out; `100` turns the nudging off |
 | `sweep_minutes` | `10` | how often to look for buried nodes |
 | `untouched_hours` | `6` | how long a node nobody can reach has to sit untouched before it's moved |
@@ -78,17 +82,19 @@ Counts the ore in an area and compares it with what the game is meant to spawn a
 orefix census 12
 ```
 ```
-level 12: 49 ore clusters | Coal Boulder: 10 (20%) target 21% | Copper Boulder: 20 (41%) target 42% | Gold Boulder: 17 (35%) target 33% | Iron Boulder: 2 (4%) target 3% | buried: 0 of 50 clusters (0 queued to move), bad points: 2
+level 12: 50 ore clusters | Coal Boulder: 10 (20%) target 21% | Copper Boulder: 21 (42%) target 42% | Gold Boulder: 17 (34%) target 33% | Iron Boulder: 2 (4%) target 3% | buried: 0 of 50 clusters (0 queued to move), bad points: 0
+  crystals: 20 spawned, population 20/20 | buried: 0 of 20 clusters (0 queued to move), bad points: 0
 ```
 
 - **ore clusters**: how many ore nodes are on the level right now.
 - **each ore**: how many of that ore there are, their share, and the share the game aims for. With the mod running, these stay close.
 - **buried**: nodes that are stuck in the rock where no one can mine them. "Queued to move" ones are about to be moved.
 - **bad points**: spawn spots the mod has stopped using because they kept burying nodes.
+- **crystals** (only on levels that have them): how many mining crystals are out, and the game's target for the level (20). Crystals only grow in the crystal-cave parts of a level, so a level with little crystal cave can't reach 20 even when everything is working.
 
 #### `orefix groups`
 
-Lists every ore and sandstone spawn group the mod is looking after right now: one per loaded mine level, plus the surface ones. Each line shows how full the group is (for example `48/50`). It's a quick way to see which areas are loaded.
+Lists every ore, crystal and sandstone spawn group the mod is looking after right now: one per loaded mine level, plus the surface ones. Each line shows how full the group is (for example `48/50`). It's a quick way to see which areas are loaded.
 
 ```
 orefix groups
@@ -128,7 +134,7 @@ orefix reset stop       cancel a reset that's running
 What it does, one level at a time from the top down:
 
 1. Loads the level if nobody is on it. It only visits levels that already exist, so it never creates new ones.
-2. Removes every ore node on the level, except any within 10 metres of a player, so nobody loses the rock they're hitting.
+2. Removes every ore node and mining crystal on the level, except any within 10 metres of a player, so nobody loses the rock they're hitting.
 3. Spawns the level full again with the right mix.
 4. Checks the new nodes. Sunk boulders are nudged out of the rock. Nodes that can't be reached at all are moved, or removed if there's nowhere better, and that spot isn't used again. Then it fills any gaps once more.
 5. Saves the level. If the reset loaded it, it lets it unload again.
@@ -203,7 +209,7 @@ You won't need these for normal running, but they're handy for checking things o
 
 #### `orefix refill <area>`
 
-Spawns an area full right now, instead of waiting for the game's 10-minute respawn timer. It only fills empty spots and doesn't remove anything.
+Spawns an area full right now, ore and crystals, instead of waiting for the game's 10-minute respawn timer. It only fills empty spots and doesn't remove anything.
 
 ```
 orefix refill 3
@@ -213,12 +219,13 @@ orefix refill 3
 
 Removes ore nodes as if they'd been mined. **This really does remove ore**, so be careful on a live server.
 
-- `<ore>` is part of an ore name: `coal`, `copper`, `iron` and so on. `iron` matches every kind of iron. Use `all` for every ore.
+- `<ore>` is part of an ore name: `coal`, `copper`, `iron` and so on. `iron` matches every kind of iron. Use `crystal` for the mining crystals, or `all` for every ore and crystal.
 - `[count]` is how many to remove. Leave it off to remove all that match.
 
 ```
 orefix destroy 3 coal 10     remove 10 coal nodes from level 3
-orefix destroy 3 all         remove every ore node from level 3
+orefix destroy 3 all         remove every ore node and crystal from level 3
+orefix destroy 12 crystal 5  remove 5 crystals from level 12
 orefix destroy surface coal  remove all the coal on the surface
 ```
 

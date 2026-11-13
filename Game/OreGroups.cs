@@ -21,14 +21,25 @@ namespace CheetosOreSpawnFix
         internal static void BeginSpawn(PopulationSample s) { _spawning.Push(s); Note(s); }
         internal static void EndSpawn() { if (_spawning.Count > 0) _spawning.Pop(); }
 
-        public static bool IsManaged(PopulationSample s)
+        // The kinds of spawn group the mod looks after. Ore (coal, copper, iron, ...) also gets the ore-mix fix; crystals
+        // and sandstone get everything else (buried and sunk fixes, bad spawn points, moves away from players).
+        public enum Kind { None, Ore, Sandstone, Crystal }
+
+        public static Kind KindOf(string definitionName)
         {
-            if (s == null || s.Definition == null) return false;
-            string n = s.Definition.name;
-            return n == Levels.BoulderGroup || n == Levels.SandstoneGroup;
+            if (definitionName == Levels.BoulderGroup) return Kind.Ore;
+            if (definitionName == Levels.SandstoneGroup) return Kind.Sandstone;
+            if (definitionName == Levels.CrystalGroup) return Kind.Crystal;
+            return Kind.None;
         }
 
-        public static bool IsOre(PopulationSample s) { return s != null && s.Definition != null && s.Definition.name == Levels.BoulderGroup; }
+        public static Kind KindOf(PopulationSample s) { return s == null || s.Definition == null ? Kind.None : KindOf(s.Definition.name); }
+
+        public static bool IsManaged(PopulationSample s) { return KindOf(s) != Kind.None; }
+        public static bool IsOre(PopulationSample s) { return KindOf(s) == Kind.Ore; }
+        public static bool IsCrystal(PopulationSample s) { return KindOf(s) == Kind.Crystal; }
+        // The groups the area commands and the reset work on: ore and crystals.
+        public static bool IsMined(PopulationSample s) { Kind k = KindOf(s); return k == Kind.Ore || k == Kind.Crystal; }
 
         public static void Note(PopulationSample s) { if (IsManaged(s)) _all.Add(s); }
         public static void Forget(PopulationSample s) { if (s != null) _all.Remove(s); }

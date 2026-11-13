@@ -25,14 +25,14 @@ namespace CheetosOreSpawnFix
             if (a == "surface" || a == "quarry")
             {
                 name = "surface";
-                groups = OreGroups.Loaded().Where(g => OreGroups.IsOre(g) && OreGroups.LevelOf(g) == OreGroups.Surface).ToList();
+                groups = OreGroups.Loaded().Where(g => OreGroups.IsMined(g) && OreGroups.LevelOf(g) == OreGroups.Surface).ToList();
                 if (groups.Count == 0) error = "no surface ore groups are loaded (a player must be near the quarry)";
                 return groups.Count > 0 ? groups : null;
             }
             int level;
             if (!int.TryParse(a, out level)) { name = a; error = "area must be a mine level number or 'surface'"; return null; }
             name = "level " + level;
-            groups = OreGroups.Loaded().Where(g => OreGroups.IsOre(g) && OreGroups.LevelOf(g) == level).ToList();
+            groups = OreGroups.Loaded().Where(g => OreGroups.IsMined(g) && OreGroups.LevelOf(g) == level).ToList();
             if (groups.Count > 0) return groups;
             CaveLayerManager m = UnityEngine.Object.FindObjectOfType<CaveLayerManager>();
             ICaveLayer layer;
@@ -41,6 +41,9 @@ namespace CheetosOreSpawnFix
             else error = "level " + level + " is not loaded (a player must be on it)";
             return null;
         }
+
+        // What to call a cluster that isn't one of the ores (a mining crystal, sandstone): its prefab name.
+        static string NoOreName(NetworkEntity e) { return e == null ? "?" : OreTable.Clean(e.name); }
 
         static IEnumerable<NetworkEntity> Clusters(List<PopulationSample> groups)
         {
@@ -68,14 +71,24 @@ namespace CheetosOreSpawnFix
             List<PopulationSample> groups = Area(area, out name, out error);
             if (groups == null) return error;
             if (!OreTable.Load()) return "ore table not found";
-            double[] shares = OreTable.TargetShares(OreGroups.AttributesOf(groups[0]));
-            int[] counts = new int[OreTable.Count];
-            foreach (PopulationSample g in groups) { int[] c = OreTable.Counts(g, null); for (int i = 0; i < c.Length; i++) counts[i] += c[i]; }
+            List<PopulationSample> crystals = groups.Where(OreGroups.IsCrystal).ToList();
+            groups = groups.Where(OreGroups.IsOre).ToList();
             StringBuilder sb = new StringBuilder();
-            sb.Append(name + ": " + (groups.Count > 1 ? groups.Count + " groups, " : "") + counts.Sum() + " ore clusters" + Mix(counts, shares) + " | " + BuriedSummary(groups));
-            if (groups.Count > 1)
-                foreach (PopulationSample g in groups)
-                    sb.Append(Environment.NewLine + "  " + OreGroups.Label(g) + ": " + OreTable.Counts(g, null).Sum() + " of " + g.MaximumPopulation + Mix(OreTable.Counts(g, null), shares));
+            if (groups.Count > 0)
+            {
+                double[] shares = OreTable.TargetShares(OreGroups.AttributesOf(groups[0]));
+                int[] counts = new int[OreTable.Count];
+                foreach (PopulationSample g in groups) { int[] c = OreTable.Counts(g, null); for (int i = 0; i < c.Length; i++) counts[i] += c[i]; }
+                sb.Append(name + ": " + (groups.Count > 1 ? groups.Count + " groups, " : "") + counts.Sum() + " ore clusters" + Mix(counts, shares) + " | " + BuriedSummary(groups));
+                if (groups.Count > 1)
+                    foreach (PopulationSample g in groups)
+                        sb.Append(Environment.NewLine + "  " + OreGroups.Label(g) + ": " + OreTable.Counts(g, null).Sum() + " of " + g.MaximumPopulation + Mix(OreTable.Counts(g, null), shares));
+            }
+            else sb.Append(name + ": no ore groups");
+            // Mining crystals: one kind, so no mix; how many are out of the game's target, and how many are buried.
+            // The game aims for 20 a level but can only place as many as the level has crystal spots.
+            foreach (PopulationSample g in crystals)
+                sb.Append(Environment.NewLine + "  crystals: " + g.SpawnedEntities.Count + " spawned, population " + g.CurrentPopulation + "/" + g.MaximumPopulation + " | " + BuriedSummary(new List<PopulationSample> { g }));
             return sb.ToString();
         }
 
@@ -91,7 +104,7 @@ namespace CheetosOreSpawnFix
             return "buried: " + buried + " of " + total + " clusters (" + queued + " queued to move), bad points: " + BadPoints.Count;
         }
 
-        [Command("destroy", "Destroy ore clusters in an area, as if mined: destroy <level|surface> <ore name part, or all> [count, -1 = all]")]
+        [Command("destroy", "Destroy ore clusters in an area, as if mined: destroy <level|surface> <ore name part, crystal, or all> [count, -1 = all]")]
         public static string Destroy(string area, string ore, int count = -1)
         {
             string name, error;
@@ -106,8 +119,12 @@ namespace CheetosOreSpawnFix
                 {
                     if (count >= 0 && done >= count) break;
                     if (e == null) continue;
-                    int i = OreTable.OreOf(e);
-                    if (want.Length > 0 && (i < 0 || OreTable.Name(i).ToLowerInvariant().IndexOf(want) < 0)) continue;
+                    if (want.Length > 0)
+                    {
+                        // "crystal" picks the mining crystals; any other name is matched against the ore.
+                        if (OreGroups.IsCrystal(g)) { if ("crystal".IndexOf(want) < 0 && want.IndexOf("crystal") < 0) continue; }
+                        else { int i = OreTable.OreOf(e); if (i < 0 || OreTable.Name(i).ToLowerInvariant().IndexOf(want) < 0) continue; }
+                    }
                     g.LoseMember(e);
                     e.SceneDestroy();
                     done++;
@@ -235,7 +252,7 @@ namespace CheetosOreSpawnFix
                     Buried.Reach(e, out ok, out n);
                     int ore = OreTable.OreOf(e);
                     SpawnPoint p = BadPoints.PointOf(g, e);
-                    sb.Append("#" + (i++) + " id " + e.Identifier + " " + (ore >= 0 ? OreTable.Name(ore) : "?") + " at " + e.transform.position.ToString("F2")
+                    sb.Append("#" + (i++) + " id " + e.Identifier + " " + (ore >= 0 ? OreTable.Name(ore) : NoOreName(e)) + " at " + e.transform.position.ToString("F2")
                         + " | rays " + rays + "/6" + (rays >= Main.Settings.BuriedRays ? " RAYS-BURIED" : "")
                         + " | reach " + ok + "/" + n + (n > 0 && ok < n ? " REACH-BURIED" : "")
                         + " | point " + (p != null ? UnityEngine.Vector3.Distance(p.Position, e.transform.position).ToString("0.0") + " m away" : "none")
@@ -274,7 +291,7 @@ namespace CheetosOreSpawnFix
                 boulders += si.Boulders; over += si.Over; overHist[Math.Min(5, si.Over)]++;
                 bands[Math.Min(4, (int)(s * 5))]++;
                 int ore = OreTable.OreOf(e);
-                rows.Add(new KeyValuePair<double, string>(s, "id " + e.Identifier + " " + (ore >= 0 ? OreTable.Name(ore) : "?") + " sunk " + (100 * s).ToString("0") + "% | reach " + (Buried.IsByReach(e) ? "BURIED" : "ok")
+                rows.Add(new KeyValuePair<double, string>(s, "id " + e.Identifier + " " + (ore >= 0 ? OreTable.Name(ore) : NoOreName(e)) + " sunk " + (100 * s).ToString("0") + "% | reach " + (Buried.IsByReach(e) ? "BURIED" : "ok")
                     + " | worst " + si.WorstId + " at " + si.WorstCentre.ToString("F2") + " | stand " + si.Stand1.ToString("F2") + " | stand2 " + si.Stand2.ToString("F2")
                     + (s * 100 > Main.Settings.MaxSunk ? " | OVER max_sunk" : "")));
             }

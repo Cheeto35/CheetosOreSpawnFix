@@ -190,7 +190,7 @@ namespace CheetosOreSpawnFix
 
         static List<PopulationSample> Groups(int level)
         {
-            return OreGroups.Loaded().Where(g => OreGroups.IsOre(g) && OreGroups.LevelOf(g) == level).ToList();
+            return OreGroups.Loaded().Where(g => OreGroups.IsMined(g) && OreGroups.LevelOf(g) == level).ToList();
         }
 
         // Clear every cluster that has no player near it, then fill the groups back up. Returns how many were cleared.
@@ -247,20 +247,22 @@ namespace CheetosOreSpawnFix
 
         static string Summary(List<PopulationSample> groups)
         {
-            int cur = 0, max = 0, buried = 0;
+            int cur = 0, max = 0, buried = 0, crystals = 0;
             int[] counts = new int[OreTable.Count];
             Buried.Sync();
             foreach (PopulationSample g in groups)
             {
                 if (g == null) continue;
+                foreach (NetworkEntity e in g.SpawnedEntities.Keys.ToList()) if (e != null && Buried.Is(e)) buried++;
+                if (OreGroups.IsCrystal(g)) { crystals += g.SpawnedEntities.Count; continue; }
                 cur += g.CurrentPopulation; max += g.MaximumPopulation;
                 int[] c = OreTable.Counts(g, null);
                 for (int i = 0; i < c.Length; i++) counts[i] += c[i];
-                foreach (NetworkEntity e in g.SpawnedEntities.Keys.ToList()) if (e != null && Buried.Is(e)) buried++;
             }
             _spawnedTotal += counts.Sum();
             return ", now " + cur + "/" + max + ", " + buried + " buried"
-                + OreFixCommands.Mix(counts, OreTable.TargetShares(OreGroups.AttributesOf(groups[0])));
+                + OreFixCommands.Mix(counts, OreTable.TargetShares(OreGroups.AttributesOf(groups[0])))
+                + (groups.Any(OreGroups.IsCrystal) ? " | crystals: " + crystals : "");
         }
         static int _spawnedTotal;
 
@@ -305,7 +307,7 @@ namespace CheetosOreSpawnFix
 
         static List<PopulationSample> SurfaceGroups()
         {
-            return OreGroups.Loaded().Where(g => OreGroups.IsOre(g) && OreGroups.LevelOf(g) == OreGroups.Surface).ToList();
+            return OreGroups.Loaded().Where(g => OreGroups.IsMined(g) && OreGroups.LevelOf(g) == OreGroups.Surface).ToList();
         }
 
         // The surface last, if asked for. If nobody is near the quarry, its chunks are loaded for the reset and let go

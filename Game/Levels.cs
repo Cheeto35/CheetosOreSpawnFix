@@ -15,6 +15,7 @@ namespace CheetosOreSpawnFix
         public AttributeSet Attributes;
         public PopulationSample Boulders;
         public PopulationSample Sandstone;
+        public PopulationSample Crystals;
     }
 
     // While a level is pinned for testing, ignore the game's attempts to drop its force-load (it does that when the
@@ -33,6 +34,7 @@ namespace CheetosOreSpawnFix
     {
         public const string BoulderGroup = "Boulder Population";
         public const string SandstoneGroup = "Sandstone Population Population";
+        public const string CrystalGroup = "Mining Crystals Population"; // the blue crystals players mine
 
         // Levels held loaded by `orefix load` (testing). The game drops a level's force-load once its cave has finished
         // rendering on the server, so pinned levels are force-loaded again whenever that happens.
@@ -79,6 +81,7 @@ namespace CheetosOreSpawnFix
                     string n = f.Population.Definition.name;
                     if (n == BoulderGroup) l.Boulders = f.Population;
                     else if (n == SandstoneGroup) l.Sandstone = f.Population;
+                    else if (n == CrystalGroup) l.Crystals = f.Population;
                 }
             return l;
         }

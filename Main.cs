@@ -48,6 +48,7 @@ namespace CheetosOreSpawnFix
                     "enabled = true          # false = the mod changes nothing",
                     "keep_mix = true         # respawned ore follows the game's odds for the level's depth",
                     "fix_buried = true       # refuse spawn points that bury nodes; move buried nodes",
+                    "respawn_crystals = true # give mining crystals their spawn spots back after a restart, so mined crystals respawn",
                     "sweep_minutes = 10      # how often the buried-node sweep runs",
                     "untouched_hours = 6     # a buried node must sit untouched this long before it is moved",
                     "player_radius = 10      # never move a node with a player this close (metres)",

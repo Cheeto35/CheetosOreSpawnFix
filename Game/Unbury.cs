@@ -268,7 +268,7 @@ namespace CheetosOreSpawnFix
                 NetworkEntity e = __instance.Entity;
                 if (e == null) return;
                 string prefab = OreTable.Clean(e.name);
-                if (prefab != MixPatch.OrePrefab && prefab != MixPatch.SandstonePrefab) return;
+                if (MixPatch.KindOfPrefab(prefab) == OreGroups.Kind.None) return;
                 // Viewpoints around the node's spot, worked out once per node (its boulders are placed in one frame).
                 int id = __instance.GetInstanceID();
                 Spot s;

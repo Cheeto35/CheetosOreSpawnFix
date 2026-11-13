@@ -2,11 +2,13 @@
 
 ## 1.1.3 (12 Nov 2026)
 
+- **Mined crystals respawn.** In the normal game, mining crystals never come back once a level has been loaded again (after a restart, or after nobody's been down there): the game only works out where crystals can grow the first time a level is created. The mod now has it work those spots out again each time a level loads, the same spots as at first, so crystals respawn on the same 10-minute timer as ore. Nothing else the game only makes once (like the teleport totems) is made again. New setting `respawn_crystals` (`false` = the normal game).
+- Crystals get the same treatment as ore nodes: the buried check, the sunk fix, bad spawn spots, and never moving next to a player. `refill`, `reset`, `destroy` (`crystal` or `all`), `inspect` and `sunk` include them, and `census` shows a crystal line.
 - **Fix:** ore could appear right in front of players. When the mod moved a buried node, it only checked for players at the spot the node was leaving, not the spot it was going to, and players see a move straight away. A moved node now never lands within 30 metres of a player (or `player_radius`, if that's bigger).
 - If every free spot is near a player, the buried node stays where it is and the mod tries again 30 seconds later, instead of removing it.
 - **Much less lag from the boulder fixes.** Every boulder affects the game's pathfinding, and the game rebuilds its pathfinding for the whole world (about 70 ms, which freezes the server) each frame boulders move. The fixes used to be spread over many frames, so one check on a level could cause 26 of those freezes. The mod now works the fixes out a bit at a time but makes all of a level's boulder changes in one go, and moves buried nodes in batches instead of 2 a second. On a test level, a refill plus a full check went from 38 freezes to 5.
 - The respawn timer is unchanged: ore respawns at the game's normal rate. `orefix refill` still respawns an area by hand.
-- The bad-spawn-point check now only ever looks at the ore and sandstone groups, so crystals, wyrms and everything else always spawn exactly like the normal game.
+- The bad-spawn-point check only ever looks at the groups the mod looks after (ore, sandstone and mining crystals), so wyrms and everything else spawn exactly like the normal game.
 
 ## 1.1.2 (12 Nov 2026)
 

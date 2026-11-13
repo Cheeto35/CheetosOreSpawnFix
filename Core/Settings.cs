@@ -7,7 +7,7 @@ namespace CheetosOreSpawnFix
     // UserData/CheetosOreSpawnFix/config.txt: "key = value" lines, "#" starts a comment. Bad values keep the default.
     public sealed class Settings
     {
-        public bool Enabled = true, KeepMix = true, FixBuried = true;
+        public bool Enabled = true, KeepMix = true, FixBuried = true, RespawnCrystals = true;
         public double SweepMinutes = 10, UntouchedHours = 6, PlayerRadius = 10;
         public int BuriedRays = 4;
         public double MaxSunk = 20; // percent of a boulder's top and sides that may be hidden in rock or ground
@@ -34,6 +34,7 @@ namespace CheetosOreSpawnFix
                     case "enabled": s.Enabled = Bool(val, s.Enabled, key, warnings); break;
                     case "keep_mix": s.KeepMix = Bool(val, s.KeepMix, key, warnings); break;
                     case "fix_buried": s.FixBuried = Bool(val, s.FixBuried, key, warnings); break;
+                    case "respawn_crystals": s.RespawnCrystals = Bool(val, s.RespawnCrystals, key, warnings); break;
                     case "sweep_minutes": s.SweepMinutes = Num(val, s.SweepMinutes, 0.1, 1440, key, warnings); break;
                     case "untouched_hours": s.UntouchedHours = Num(val, s.UntouchedHours, 0, 1000, key, warnings); break;
                     case "player_radius": s.PlayerRadius = Num(val, s.PlayerRadius, 0, 200, key, warnings); break;
