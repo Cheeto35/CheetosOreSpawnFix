@@ -131,17 +131,43 @@ namespace CheetosOreSpawnFix
         {
             Job j = Start(cluster);
             Continue(j, double.MaxValue, System.Diagnostics.Stopwatch.StartNew());
+            Apply(new List<Job> { j });
             return j.R;
         }
 
-        // The same work, done a slice at a time so a badly sunk node doesn't stall a frame. A job only reads the world
-        // until it has an answer for a boulder, so it can safely pause between frames.
+        // The same work, done a slice at a time so a badly sunk node doesn't stall a frame. A job only reads the world:
+        // the nudges and removals it decides on are kept until Apply, so a whole level's changes can be made in one
+        // frame. Every boulder carries a pathfinding navmesh cut, and the game rebuilds its pathfinding areas (60-90 ms
+        // on the main thread) once for each frame in which boulders moved, so changes spread over frames cost far more.
         public sealed class Job
         {
             public NetworkEntity Cluster;
             public Result R = new Result();
             internal IEnumerator<bool> Steps;
             public bool Done;
+            internal readonly List<KeyValuePair<NetworkEntity, Vector3>> Nudges = new List<KeyValuePair<NetworkEntity, Vector3>>();
+            internal readonly List<NetworkEntity> Removals = new List<NetworkEntity>();
+            public bool HasChanges { get { return Nudges.Count > 0 || Removals.Count > 0; } }
+        }
+
+        // Make the finished jobs' nudges and removals now, all in this frame. Boulders mined since are skipped.
+        public static void Apply(List<Job> jobs)
+        {
+            bool any = false;
+            foreach (Job j in jobs)
+            {
+                foreach (KeyValuePair<NetworkEntity, Vector3> n in j.Nudges)
+                    if (n.Key != null) { n.Key.transform.position += n.Value; any = true; }
+                if (j.Removals.Count > 0 && j.Cluster != null)
+                {
+                    // Keep at least one boulder (a destroy only takes effect at the end of the frame, so count here).
+                    int left = j.Cluster.GetComponentsInChildren<NetworkEntity>().Count(x => x != j.Cluster);
+                    foreach (NetworkEntity b in j.Removals)
+                        if (b != null && left > 1) { b.SceneDestroy(); left--; any = true; }
+                }
+                j.Nudges.Clear(); j.Removals.Clear();
+            }
+            if (any) Physics.SyncTransforms();
         }
 
         public static Job Start(NetworkEntity cluster)
@@ -179,7 +205,6 @@ namespace CheetosOreSpawnFix
             yield return true;
             List<NetworkEntity> boulders = cluster.GetComponentsInChildren<NetworkEntity>().Where(x => x != cluster).ToList();
             double limit = Limit;
-            bool moved = false;
             foreach (NetworkEntity b in boulders)
             {
                 if (b == null || cluster == null) continue; // mined since the job began
@@ -202,11 +227,10 @@ namespace CheetosOreSpawnFix
                         if (++tries % TriesPerStep == 0) yield return true;
                     }
                 if (b == null) continue;
-                if (found) { b.transform.position += best; moved = true; r.Lifted++; continue; }
+                if (found) { j.Nudges.Add(new KeyValuePair<NetworkEntity, Vector3>(b, best)); r.Lifted++; continue; }
                 r.Over++;
-                if (boulders.Count(x => x != null) - r.Removed > 1) { b.SceneDestroy(); r.Removed++; }
+                if (boulders.Count(x => x != null) - r.Removed > 1) { j.Removals.Add(b); r.Removed++; }
             }
-            if (moved) Physics.SyncTransforms();
         }
 
         // Totals for the log and `orefix census`.

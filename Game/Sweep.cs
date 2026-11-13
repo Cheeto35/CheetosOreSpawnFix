@@ -14,11 +14,13 @@ namespace CheetosOreSpawnFix
     // Never moves a node with a player within PlayerRadius, nor onto a spot within ArriveRadius of a player (a move
     // shows for players at once, so it would look like ore spawning in front of them). Works on every loaded ore group: the mine levels and the
     // surface (the plot outside the mine entrance and the quarry).
-    // All of this shares a small time budget per frame, so a full refill or a sweep over many loaded groups is
-    // spread over several frames instead of stalling one.
+    // The work shares a small time budget per frame, but the boulder changes themselves are made in batches (see Run),
+    // since the game rebuilds its pathfinding once for each frame in which boulders moved.
     public static class Sweep
     {
         public const double FrameBudgetMs = 2.0;
+        public const float DrainSeconds = 2f;
+        public const int MaxMovesPerBatch = 64;
         static readonly UntouchedClock _clock = new UntouchedClock();
         static readonly Dictionary<uint, int> _parts = new Dictionary<uint, int>();
         static float _nextSweep = 120f, _nextDrain;
@@ -39,11 +41,16 @@ namespace CheetosOreSpawnFix
                 Perf.Stop("new node checks (per frame)", sw);
             }
 
-            if (now >= _nextDrain && BadPoints.Queued > 0)
+            // Queued moves are made together, once the new-node checks are done, so the game rebuilds its pathfinding
+            // areas once for the lot instead of once per move. Nodes waiting on a player are put back for later.
+            if (now >= _nextDrain && BadPoints.Queued > 0 && BadPoints.PendingChecks == 0)
             {
-                _nextDrain = now + 0.5f; // at most 2 moves a second
+                _nextDrain = now + DrainSeconds;
+                Stopwatch sw = Perf.Start();
+                int n = System.Math.Min(BadPoints.Queued, MaxMovesPerBatch);
                 NetworkEntity e; PopulationSample g;
-                if (BadPoints.TryDequeueMove(out e, out g)) { Stopwatch sw = Perf.Start(); MoveQueued(e, g); Perf.Stop("move queued node", sw); }
+                for (int i = 0; i < n && BadPoints.TryDequeueMove(out e, out g); i++) MoveQueued(e, g);
+                Perf.Stop("move queued nodes (batch)", sw);
             }
 
             if (_running == null && now >= _nextSweep)
@@ -226,41 +233,81 @@ namespace CheetosOreSpawnFix
                 get { return "moved " + _moved + ", skipped (player near) " + _near + ", skipped (young) " + _young + ", replaced " + _replaced + " (of " + _buried + " buried); sunk boulders nudged out " + _lifted + ", removed " + _removed; }
             }
 
-            // Work until the budget is used up; true once every cluster has been looked at.
-            // A node whose sunk boulders are being fixed over several frames.
-            Unbury.Job _fix;
+            // The pass works in four stages, so the boulder changes happen in two frames instead of dozens: every boulder
+            // carries a pathfinding navmesh cut, and the game rebuilds its pathfinding areas (60-90 ms on the main thread)
+            // once for each frame in which boulders moved.
+            //  1. look at every cluster and work out its sunk-boulder fixes (a slice at a time; nothing changes yet);
+            //  2. make all those fixes in one frame;
+            //  3. check which clusters are buried and due a move (a slice at a time);
+            //  4. make all those moves in one frame.
+            Unbury.Job _fix;                 // stage 1: the cluster being worked out over several frames
             PopulationSample _fixSample;
+            readonly List<Unbury.Job> _toApply = new List<Unbury.Job>();
+            readonly List<KeyValuePair<PopulationSample, NetworkEntity>> _toCheck = new List<KeyValuePair<PopulationSample, NetworkEntity>>();
+            readonly List<KeyValuePair<PopulationSample, NetworkEntity>> _toMove = new List<KeyValuePair<PopulationSample, NetworkEntity>>();
+            int _stage = 1, _nextCheck;
 
+            // Work until the budget is used up; true once the pass is done.
             public bool Step(double budgetMs)
             {
                 Stopwatch sw = Stopwatch.StartNew();
                 Buried.Sync();
                 List<Vector3> players = PlayerPositions();
                 double now = Time.realtimeSinceStartup;
-                if (_fix != null)
+                if (_stage == 1)
                 {
-                    if (!Unbury.Continue(_fix, budgetMs, sw)) return false;
-                    FinishFix(players, now);
-                }
-                while (_next < _todo.Count)
-                {
-                    if (sw.Elapsed.TotalMilliseconds >= budgetMs) return false;
-                    PopulationSample sample = _todo[_next].Key;
-                    NetworkEntity e = _todo[_next].Value;
-                    _next++;
-                    if (e == null || sample.Chunk == null || !sample.SpawnedEntities.ContainsKey(e)) continue; // mined or unloaded since the pass began
-                    _seen.Add(e.Identifier);
-                    _clock.Seen(Key(e), Touched(e), now);
-                    if (Unbury.On && !_clean.Contains(e.Identifier) && !PlayerNear(e.transform.position, players))
+                    if (_fix != null)
                     {
-                        _fix = Unbury.Start(e);
-                        _fixSample = sample;
                         if (!Unbury.Continue(_fix, budgetMs, sw)) return false;
-                        FinishFix(players, now);
-                        continue;
+                        FinishFix();
                     }
-                    CheckBuried(sample, e, players, now);
+                    while (_next < _todo.Count)
+                    {
+                        if (sw.Elapsed.TotalMilliseconds >= budgetMs) return false;
+                        PopulationSample sample = _todo[_next].Key;
+                        NetworkEntity e = _todo[_next].Value;
+                        _next++;
+                        if (!Alive(sample, e)) continue; // mined or unloaded since the pass began
+                        _seen.Add(e.Identifier);
+                        _clock.Seen(Key(e), Touched(e), now);
+                        _toCheck.Add(new KeyValuePair<PopulationSample, NetworkEntity>(sample, e));
+                        if (Unbury.On && !_clean.Contains(e.Identifier) && !PlayerNear(e.transform.position, players))
+                        {
+                            _fix = Unbury.Start(e);
+                            _fixSample = sample;
+                            if (!Unbury.Continue(_fix, budgetMs, sw)) return false;
+                            FinishFix();
+                        }
+                    }
+                    _stage = 2;
                 }
+                if (_stage == 2)
+                {
+                    Unbury.Apply(_toApply);
+                    _toApply.Clear();
+                    _stage = 3;
+                    return false; // let the moved boulders' colliders settle before the buried checks
+                }
+                if (_stage == 3)
+                {
+                    while (_nextCheck < _toCheck.Count)
+                    {
+                        if (sw.Elapsed.TotalMilliseconds >= budgetMs) return false;
+                        KeyValuePair<PopulationSample, NetworkEntity> kv = _toCheck[_nextCheck++];
+                        if (Alive(kv.Key, kv.Value)) CheckBuried(kv.Key, kv.Value, players, now);
+                    }
+                    _stage = 4;
+                }
+                // Stage 4: every move in this one frame. Players may have walked up since stage 3, so check again.
+                foreach (KeyValuePair<PopulationSample, NetworkEntity> kv in _toMove)
+                {
+                    if (!Alive(kv.Key, kv.Value)) continue;
+                    if (PlayerNear(kv.Value.transform.position, players)) { _near++; continue; }
+                    string r = Move(kv.Key, kv.Value, "buried and untouched");
+                    if (r == BlockedResult) _near++;
+                    else if (r.StartsWith("moved")) _moved++; else _replaced++;
+                }
+                _toMove.Clear();
                 // Nodes in areas that have unloaded keep their clocks (an unloaded node can't be touched); only nodes not
                 // seen for two days are dropped.
                 _clock.Prune(now, 48 * 3600.0);
@@ -268,18 +315,23 @@ namespace CheetosOreSpawnFix
                 return true;
             }
 
-            void FinishFix(List<Vector3> players, double now)
+            static bool Alive(PopulationSample sample, NetworkEntity e)
+            {
+                return e != null && sample != null && sample.Chunk != null && sample.SpawnedEntities.ContainsKey(e);
+            }
+
+            void FinishFix()
             {
                 Unbury.Job j = _fix;
                 PopulationSample sample = _fixSample;
                 _fix = null; _fixSample = null;
                 Unbury.Note(j.R);
                 _lifted += j.R.Lifted; _removed += j.R.Removed;
+                if (j.HasChanges) _toApply.Add(j);
                 NetworkEntity e = j.Cluster;
-                if (e == null || sample == null || sample.Chunk == null || !sample.SpawnedEntities.ContainsKey(e)) return; // every boulder was removed, or it was mined
+                if (!Alive(sample, e)) return; // mined since
                 if (_clean.Count > 50000) _clean.Clear();
                 _clean.Add(e.Identifier);
-                CheckBuried(sample, e, players, now);
             }
 
             void CheckBuried(PopulationSample sample, NetworkEntity e, List<Vector3> players, double now)
@@ -288,9 +340,7 @@ namespace CheetosOreSpawnFix
                 _buried++;
                 if (!_ignoreAge && !_clock.Due(Key(e), now, Main.Settings.UntouchedHours)) { _young++; return; }
                 if (PlayerNear(e.transform.position, players)) { _near++; return; }
-                string r = Move(sample, e, "buried and untouched");
-                if (r == BlockedResult) _near++;
-                else if (r.StartsWith("moved")) _moved++; else _replaced++;
+                _toMove.Add(new KeyValuePair<PopulationSample, NetworkEntity>(sample, e));
             }
         }
     }
