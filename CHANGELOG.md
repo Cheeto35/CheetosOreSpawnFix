@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.4
+
+- Each mined ore node now respawns after an independently randomized delay of 10 to 60 minutes on loaded mine levels and at surface ore spawns.
+
 ## 1.1.3 (12 Nov 2026)
 
 - **Mined crystals respawn.** In the normal game, mining crystals never come back once a level has been loaded again (after a restart, or after nobody's been down there): the game only works out where crystals can grow the first time a level is created. The mod now has it work those spots out again each time a level loads, the same spots as at first, so crystals respawn on the same 10-minute timer as ore. Nothing else the game only makes once (like the teleport totems) is made again. New setting `respawn_crystals` (`false` = the normal game).

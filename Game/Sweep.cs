@@ -10,7 +10,7 @@ namespace CheetosOreSpawnFix
     //  - new nodes are checked a few frames after they spawn; buried ones are queued and moved soon after;
     //  - older buried nodes, once they have sat untouched for UntouchedHours (checked every SweepMinutes).
     // When every spawn point is taken there is nowhere to move to, so the node is removed as if mined instead and
-    // the group's refill (every 10 min) respawns it on a point that is not refused.
+    // the group's refill respawns it on a point that is not refused.
     // Never moves a node with a player within PlayerRadius, nor onto a spot within ArriveRadius of a player (a move
     // shows for players at once, so it would look like ore spawning in front of them). Works on every loaded ore group: the mine levels and the
     // surface (the plot outside the mine entrance and the quarry).
