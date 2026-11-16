@@ -5,7 +5,7 @@ using Alta.Console;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(CheetosOreSpawnFix.Main), "CheetosOreSpawnFix", "1.1.3", "Cheeto35")]
+[assembly: MelonInfo(typeof(CheetosOreSpawnFix.Main), "CheetosOreSpawnFix", "1.1.4", "Cheeto35")]
 [assembly: MelonGame("Alta", "A Township Tale")]
 
 namespace CheetosOreSpawnFix
@@ -28,12 +28,13 @@ namespace CheetosOreSpawnFix
             if (!IsServer) { Log("client: idle"); return; }
             LoadSettings();
             CommandService.CommandCollection.Collect(typeof(Main).Assembly);
-            Log("1.1.3 ready: enabled=" + Settings.Enabled + " keep_mix=" + Settings.KeepMix + " fix_buried=" + Settings.FixBuried);
+            Log("1.1.4 ready: enabled=" + Settings.Enabled + " keep_mix=" + Settings.KeepMix + " fix_buried=" + Settings.FixBuried);
         }
 
         public override void OnUpdate()
         {
             if (!IsServer) return;
+            try { OreRespawn.Tick(); } catch (Exception e) { Log("ore respawn error: " + e); }
             try { Sweep.Tick(); } catch (Exception e) { Log("sweep error: " + e); }
             try { Levels.KeepPinned(); } catch (Exception e) { Log("pin error: " + e); }
             try { Reset.Tick(); } catch (Exception e) { Log("reset error: " + e); Reset.Stop(); }
