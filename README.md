@@ -19,7 +19,7 @@ It's worse than it looks, because a node is really a little pile of 3 to 5 bould
 - **Keeps each level's ore mix where the game intended.** When a node respawns, the mod picks whichever ore that level is shortest on, based on the game's own odds for that depth. Coal can't take over anymore.
 - **Does the same on the surface.** The little plot outside the mine entrance and the big quarry above it (the one you cross to get to the climbing tower) keep the game's surface mix: about two coal for every copper.
 - **Pulls sunk boulders out of the rock.** Any boulder that's more than 20% hidden in the floor, a wall or a rock gets nudged the smallest distance (up or to the side) that frees it. New nodes are fixed as they spawn, before any player sees them. Older nodes get fixed by the regular check, and players see the change the next time they load that area. A boulder that can't be freed at all is removed.
-- **Makes mined crystals respawn.** Every time a level loads, the mod has the game work out the crystal spots again, exactly as it did when the level was first made. Crystals then respawn on the same 10-minute timer as ore, up to the game's own limit for the level. They also get the same buried and sunk fixes as ore nodes. Nothing else the game only makes once (teleport totems and so on) is made again.
+- **Makes mined crystals respawn.** Every time a level loads, the mod has the game work out the crystal spots again, exactly as it did when the level was first made. Crystals then respawn on the same timer as ore (10 minutes, or `respawn_minutes`), up to the game's own limit for the level. They also get the same buried and sunk fixes as ore nodes. Nothing else the game only makes once (teleport totems and so on) is made again.
 - **Moves nodes that can't be reached at all.** If a whole node lands inside the rock, it gets moved. If a spot keeps doing that, it's not used again.
 - **Cleans up old buried nodes.** Every 10 minutes the mod checks the loaded areas. Unreachable nodes that have sat untouched for 6 hours get moved somewhere minable. The 6 hours keeps counting while an area is unloaded, so this works on busy servers too.
 
@@ -31,7 +31,7 @@ You need an A Township Tale server on the final game build (`main-1.7.2.1.42203`
 
 1. Stop the server.
 2. Drop `CheetosOreSpawnFix.dll` (it's in this folder, ready to use) into the server's `Mods` folder.
-3. Start the server. You should see `[CheetosOreSpawnFix] 1.1.3 ready` in the log.
+3. Start the server. You should see `[CheetosOreSpawnFix] 1.1.4 ready` in the log.
 
 Levels that had already gone bad before you installed it will fix themselves as players mine them. If you'd rather start clean right away without wiping the mine, run `orefix reset all` in the server console (see [Resetting the ore on an existing server](#resetting-the-ore-on-an-existing-server)).
 
@@ -47,6 +47,7 @@ The first time it runs, the mod creates `UserData\CheetosOreSpawnFix\config.txt`
 | `keep_mix` | `true` | keep the ore mix on target in the mines and on the surface |
 | `fix_buried` | `true` | fix sunk boulders, move buried nodes, and avoid spots that bury them |
 | `respawn_crystals` | `true` | let mined crystals respawn after a level has loaded again (see above); `false` is the normal game, where they don't |
+| `respawn_minutes` | `10` | how often ore and crystals respawn, in minutes (1 to 1440). `10` is the game's own timer, and the mod leaves the timer alone at that value. Each respawn adds up to 7 nodes, so `5` refills a mined-out level about twice as fast. Sandstone, wyrms and everything else keep the game's timers. The server's spawn rate setting still applies on top |
 | `max_sunk` | `20` | how much of a boulder (in %) may be hidden in rock or ground before it's nudged out; `100` turns the nudging off |
 | `sweep_minutes` | `10` | how often to look for buried nodes |
 | `untouched_hours` | `6` | how long a node nobody can reach has to sit untouched before it's moved |
@@ -209,7 +210,7 @@ You won't need these for normal running, but they're handy for checking things o
 
 #### `orefix refill <area>`
 
-Spawns an area full right now, ore and crystals, instead of waiting for the game's 10-minute respawn timer. It only fills empty spots and doesn't remove anything.
+Spawns an area full right now, ore and crystals, instead of waiting for the respawn timer (10 minutes unless you've changed `respawn_minutes`). It only fills empty spots and doesn't remove anything.
 
 ```
 orefix refill 3

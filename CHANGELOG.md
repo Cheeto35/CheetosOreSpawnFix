@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.4 (17 Nov 2026)
+
+- **New setting: `respawn_minutes`.** Sets how often ore and crystals respawn. The default is `10`, the game's own timer, and at that value the mod doesn't touch the timer at all. Set it lower to refill mines faster, or higher to make ore scarcer. Each respawn still adds up to 7 nodes per level, as in the normal game. Sandstone, wyrms and everything else keep the game's timers, and the server's spawn rate setting still applies on top.
+- A change takes effect with `orefix reload`, no restart needed. Levels that are already loaded switch to the new timer without losing the time they've already waited.
+- The server log's ready line and `orefix reload` show the current respawn timer.
+
 ## 1.1.3 (12 Nov 2026)
 
 - **Mined crystals respawn.** In the normal game, mining crystals never come back once a level has been loaded again (after a restart, or after nobody's been down there): the game only works out where crystals can grow the first time a level is created. The mod now has it work those spots out again each time a level loads, the same spots as at first, so crystals respawn on the same 10-minute timer as ore. Nothing else the game only makes once (like the teleport totems) is made again. New setting `respawn_crystals` (`false` = the normal game).

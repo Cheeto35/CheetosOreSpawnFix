@@ -9,6 +9,7 @@ namespace CheetosOreSpawnFix
     {
         public bool Enabled = true, KeepMix = true, FixBuried = true, RespawnCrystals = true;
         public double SweepMinutes = 10, UntouchedHours = 6, PlayerRadius = 10;
+        public double RespawnMinutes = 10; // how often ore and crystals respawn; 10 is the game's own timer
         public int BuriedRays = 4;
         public double MaxSunk = 20; // percent of a boulder's top and sides that may be hidden in rock or ground
         public string BuriedCheck = "reach"; // "reach" (each boulder reachable from the open cave) or "rays" (old)
@@ -35,6 +36,7 @@ namespace CheetosOreSpawnFix
                     case "keep_mix": s.KeepMix = Bool(val, s.KeepMix, key, warnings); break;
                     case "fix_buried": s.FixBuried = Bool(val, s.FixBuried, key, warnings); break;
                     case "respawn_crystals": s.RespawnCrystals = Bool(val, s.RespawnCrystals, key, warnings); break;
+                    case "respawn_minutes": s.RespawnMinutes = Num(val, s.RespawnMinutes, 1, 1440, key, warnings); break;
                     case "sweep_minutes": s.SweepMinutes = Num(val, s.SweepMinutes, 0.1, 1440, key, warnings); break;
                     case "untouched_hours": s.UntouchedHours = Num(val, s.UntouchedHours, 0, 1000, key, warnings); break;
                     case "player_radius": s.PlayerRadius = Num(val, s.PlayerRadius, 0, 200, key, warnings); break;

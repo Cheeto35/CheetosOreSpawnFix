@@ -5,7 +5,7 @@ using Alta.Console;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(CheetosOreSpawnFix.Main), "CheetosOreSpawnFix", "1.1.3", "Cheeto35")]
+[assembly: MelonInfo(typeof(CheetosOreSpawnFix.Main), "CheetosOreSpawnFix", "1.1.4", "Cheeto35")]
 [assembly: MelonGame("Alta", "A Township Tale")]
 
 namespace CheetosOreSpawnFix
@@ -28,7 +28,7 @@ namespace CheetosOreSpawnFix
             if (!IsServer) { Log("client: idle"); return; }
             LoadSettings();
             CommandService.CommandCollection.Collect(typeof(Main).Assembly);
-            Log("1.1.3 ready: enabled=" + Settings.Enabled + " keep_mix=" + Settings.KeepMix + " fix_buried=" + Settings.FixBuried);
+            Log("1.1.4 ready: enabled=" + Settings.Enabled + " keep_mix=" + Settings.KeepMix + " fix_buried=" + Settings.FixBuried + " respawn " + RespawnTimer.Describe());
         }
 
         public override void OnUpdate()
@@ -49,6 +49,7 @@ namespace CheetosOreSpawnFix
                     "keep_mix = true         # respawned ore follows the game's odds for the level's depth",
                     "fix_buried = true       # refuse spawn points that bury nodes; move buried nodes",
                     "respawn_crystals = true # give mining crystals their spawn spots back after a restart, so mined crystals respawn",
+                    "respawn_minutes = 10    # how often ore and crystals respawn (10 = the game's default)",
                     "sweep_minutes = 10      # how often the buried-node sweep runs",
                     "untouched_hours = 6     # a buried node must sit untouched this long before it is moved",
                     "player_radius = 10      # never move a node with a player this close (metres)",
@@ -59,7 +60,8 @@ namespace CheetosOreSpawnFix
             Settings = Settings.Parse(File.ReadAllText(ConfigPath), warnings);
             foreach (string w in warnings) Log("config: " + w);
             Sweep.Reschedule();
-            return "loaded " + ConfigPath + (warnings.Count > 0 ? " with " + warnings.Count + " warning(s)" : "");
+            RespawnTimer.Refresh();
+            return "loaded " + ConfigPath + (warnings.Count > 0 ? " with " + warnings.Count + " warning(s)" : "") + "; respawn " + RespawnTimer.Describe();
         }
     }
 }

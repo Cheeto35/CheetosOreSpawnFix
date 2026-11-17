@@ -164,6 +164,7 @@ namespace CheetosOreSpawnFix
         public static string Enable(bool on)
         {
             Main.Settings.Enabled = on;
+            RespawnTimer.Refresh();
             Main.Log("enabled=" + on + " (console)");
             return "enabled=" + on;
         }
