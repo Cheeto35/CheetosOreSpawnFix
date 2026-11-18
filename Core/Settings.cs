@@ -9,7 +9,11 @@ namespace CheetosOreSpawnFix
     {
         public bool Enabled = true, KeepMix = true, FixBuried = true, RespawnCrystals = true;
         public double SweepMinutes = 10, UntouchedHours = 6, PlayerRadius = 10;
-        public double RespawnMinutes = 10; // how often ore and crystals respawn; 10 is the game's own timer
+        // How often ore and crystals respawn, in minutes: a random time from RespawnMinutes to RespawnMinutesMax each
+        // time (the same number = a fixed timer). 10 is the game's own timer.
+        public double RespawnMinutes = 10, RespawnMinutesMax = 10;
+        // Nodes added per level each respawn, from RespawnAmount to RespawnAmountMax. 0 = the game's own amount.
+        public int RespawnAmount = 0, RespawnAmountMax = 0;
         public int BuriedRays = 4;
         public double MaxSunk = 20; // percent of a boulder's top and sides that may be hidden in rock or ground
         public string BuriedCheck = "reach"; // "reach" (each boulder reachable from the open cave) or "rays" (old)
@@ -36,7 +40,13 @@ namespace CheetosOreSpawnFix
                     case "keep_mix": s.KeepMix = Bool(val, s.KeepMix, key, warnings); break;
                     case "fix_buried": s.FixBuried = Bool(val, s.FixBuried, key, warnings); break;
                     case "respawn_crystals": s.RespawnCrystals = Bool(val, s.RespawnCrystals, key, warnings); break;
-                    case "respawn_minutes": s.RespawnMinutes = Num(val, s.RespawnMinutes, 1, 1440, key, warnings); break;
+                    case "respawn_minutes": Range(val, ref s.RespawnMinutes, ref s.RespawnMinutesMax, 1, 1440, key, warnings); break;
+                    case "respawn_amount":
+                        double lo = s.RespawnAmount, hi = s.RespawnAmountMax;
+                        Range(val, ref lo, ref hi, 0, 100, key, warnings);
+                        s.RespawnAmount = (int)Math.Round(lo); s.RespawnAmountMax = (int)Math.Round(hi);
+                        if (s.RespawnAmount == 0 && s.RespawnAmountMax != 0) { warnings.Add(key + ": 0 means the game's own amount and can't start a range; keeping 0"); s.RespawnAmountMax = 0; }
+                        break;
                     case "sweep_minutes": s.SweepMinutes = Num(val, s.SweepMinutes, 0.1, 1440, key, warnings); break;
                     case "untouched_hours": s.UntouchedHours = Num(val, s.UntouchedHours, 0, 1000, key, warnings); break;
                     case "player_radius": s.PlayerRadius = Num(val, s.PlayerRadius, 0, 200, key, warnings); break;
@@ -61,6 +71,18 @@ namespace CheetosOreSpawnFix
             }
             warnings.Add(key + ": '" + v + "' is not true/false; keeping " + fallback);
             return fallback;
+        }
+
+        // "5" or "10-60". Both ends must be in [min, max] and the first no bigger than the second; otherwise keep the old values.
+        static void Range(string v, ref double low, ref double high, double min, double max, string key, List<string> warnings)
+        {
+            string[] parts = v.Split('-');
+            double a, b;
+            if (parts.Length == 1 && double.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out a) && a >= min && a <= max) { low = high = a; return; }
+            if (parts.Length == 2 && double.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out a)
+                && double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out b)
+                && a >= min && b <= max && a <= b) { low = a; high = b; return; }
+            warnings.Add(key + ": '" + v + "' must be a number or a range like 10-60, from " + min + " to " + max + "; keeping " + (low == high ? low.ToString(CultureInfo.InvariantCulture) : low.ToString(CultureInfo.InvariantCulture) + "-" + high.ToString(CultureInfo.InvariantCulture)));
         }
 
         static double Num(string v, double fallback, double min, double max, string key, List<string> warnings)

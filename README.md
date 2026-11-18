@@ -31,7 +31,7 @@ You need an A Township Tale server on the final game build (`main-1.7.2.1.42203`
 
 1. Stop the server.
 2. Drop `CheetosOreSpawnFix.dll` (it's in this folder, ready to use) into the server's `Mods` folder.
-3. Start the server. You should see `[CheetosOreSpawnFix] 1.1.4 ready` in the log.
+3. Start the server. You should see `[CheetosOreSpawnFix] 1.1.5 ready` in the log.
 
 Levels that had already gone bad before you installed it will fix themselves as players mine them. If you'd rather start clean right away without wiping the mine, run `orefix reset all` in the server console (see [Resetting the ore on an existing server](#resetting-the-ore-on-an-existing-server)).
 
@@ -47,7 +47,8 @@ The first time it runs, the mod creates `UserData\CheetosOreSpawnFix\config.txt`
 | `keep_mix` | `true` | keep the ore mix on target in the mines and on the surface |
 | `fix_buried` | `true` | fix sunk boulders, move buried nodes, and avoid spots that bury them |
 | `respawn_crystals` | `true` | let mined crystals respawn after a level has loaded again (see above); `false` is the normal game, where they don't |
-| `respawn_minutes` | `10` | how often ore and crystals respawn, in minutes (1 to 1440). `10` is the game's own timer, and the mod leaves the timer alone at that value. Each respawn adds up to 7 nodes, so `5` refills a mined-out level about twice as fast. Sandstone, wyrms and everything else keep the game's timers. The server's spawn rate setting still applies on top |
+| `respawn_minutes` | `10` | how often ore and crystals respawn, in minutes (1 to 1440). A range like `10-60` picks a random wait before each respawn. `10` is the game's own timer, and the mod leaves the timer alone at that value. Sandstone, wyrms and everything else keep the game's timers. The server's spawn rate setting still applies on top |
+| `respawn_amount` | `0` | how many nodes each level gets back per respawn (up to 100), or a random range like `2-5`. `0` is the game's own amount: up to 7 while a level is mostly empty, fewer as it fills up. Ore and crystals count separately, and a level never goes over its limit |
 | `max_sunk` | `20` | how much of a boulder (in %) may be hidden in rock or ground before it's nudged out; `100` turns the nudging off |
 | `sweep_minutes` | `10` | how often to look for buried nodes |
 | `untouched_hours` | `6` | how long a node nobody can reach has to sit untouched before it's moved |

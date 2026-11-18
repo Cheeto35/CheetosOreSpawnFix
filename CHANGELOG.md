@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.5 (18 Nov 2026)
+
+- **Random respawn timer.** `respawn_minutes` takes a range, like `respawn_minutes = 10-60`. Each level then waits a random time in that range before every respawn, so ore and crystals don't all come back on a fixed beat. A single number still works as before.
+- **New setting: `respawn_amount`.** Sets how many nodes each level gets back per respawn, like `respawn_amount = 3`, or a random range like `2-5`. The default `0` keeps the game's own amount: up to 7 while a level is mostly empty, fewer as it fills up. Ore and crystals count separately, and a level never goes over its limit.
+- When a level loads after sitting unloaded, the game catches up on the respawns it missed. With a range, that catch-up uses the middle of the range.
+- The ready line and `orefix reload` show both settings, for example `respawn every 10-60 min, 3 nodes each time`.
+
 ## 1.1.4 (17 Nov 2026)
 
 - **New setting: `respawn_minutes`.** Sets how often ore and crystals respawn. The default is `10`, the game's own timer, and at that value the mod doesn't touch the timer at all. Set it lower to refill mines faster, or higher to make ore scarcer. Each respawn still adds up to 7 nodes per level, as in the normal game. Sandstone, wyrms and everything else keep the game's timers, and the server's spawn rate setting still applies on top.

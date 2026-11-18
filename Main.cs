@@ -5,7 +5,7 @@ using Alta.Console;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(CheetosOreSpawnFix.Main), "CheetosOreSpawnFix", "1.1.4", "Cheeto35")]
+[assembly: MelonInfo(typeof(CheetosOreSpawnFix.Main), "CheetosOreSpawnFix", "1.1.5", "Cheeto35")]
 [assembly: MelonGame("Alta", "A Township Tale")]
 
 namespace CheetosOreSpawnFix
@@ -28,7 +28,7 @@ namespace CheetosOreSpawnFix
             if (!IsServer) { Log("client: idle"); return; }
             LoadSettings();
             CommandService.CommandCollection.Collect(typeof(Main).Assembly);
-            Log("1.1.4 ready: enabled=" + Settings.Enabled + " keep_mix=" + Settings.KeepMix + " fix_buried=" + Settings.FixBuried + " respawn " + RespawnTimer.Describe());
+            Log("1.1.5 ready: enabled=" + Settings.Enabled + " keep_mix=" + Settings.KeepMix + " fix_buried=" + Settings.FixBuried + " respawn " + RespawnTimer.Describe());
         }
 
         public override void OnUpdate()
@@ -49,7 +49,8 @@ namespace CheetosOreSpawnFix
                     "keep_mix = true         # respawned ore follows the game's odds for the level's depth",
                     "fix_buried = true       # refuse spawn points that bury nodes; move buried nodes",
                     "respawn_crystals = true # give mining crystals their spawn spots back after a restart, so mined crystals respawn",
-                    "respawn_minutes = 10    # how often ore and crystals respawn (10 = the game's default)",
+                    "respawn_minutes = 10    # how often ore and crystals respawn: minutes, or a random range like 10-60 (10 = the game's default)",
+                    "respawn_amount = 0      # nodes added per level each respawn: a number or range like 2-5 (0 = the game's own amount)",
                     "sweep_minutes = 10      # how often the buried-node sweep runs",
                     "untouched_hours = 6     # a buried node must sit untouched this long before it is moved",
                     "player_radius = 10      # never move a node with a player this close (metres)",
